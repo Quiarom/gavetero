@@ -113,6 +113,7 @@ func TestSnapshotServeHelp(t *testing.T) {
 	mustContain(t, stdout,
 		"serve",
 		"--host",
+		"--username",
 		"--addr",
 		"--mock",
 		"--mock-fixture",

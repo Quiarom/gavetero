@@ -20,6 +20,7 @@ import (
 // it when it calls SetServeRunner.
 type ServeArgs struct {
 	Host          string
+	Username      string
 	Addr          string
 	Timeout       time.Duration
 	Mock          bool
@@ -50,6 +51,7 @@ func runServe(opts serveOptions) error {
 	}
 	return serveRunner(ServeArgs{
 		Host:          opts.Host,
+		Username:      opts.Username,
 		Addr:          opts.Addr,
 		Timeout:       opts.Timeout,
 		Mock:          opts.Mock,

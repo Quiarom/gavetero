@@ -10,6 +10,7 @@ import (
 // and /v0/security/<name> to AI agents and the dashboard.
 func newServeCmd() *cobra.Command {
 	var host string
+	var username string
 	var addr string
 	var timeoutMS int
 	var mock bool
@@ -39,6 +40,7 @@ the network, so you can develop without hardware.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := serveOptions{
 				Host:          host,
+				Username:      username,
 				Addr:          addr,
 				Timeout:       timeoutFromMS(timeoutMS),
 				Mock:          mock,
@@ -51,6 +53,8 @@ the network, so you can develop without hardware.`,
 
 	cmd.Flags().StringVar(&host, "host", "192.168.0.1",
 		"local router address (RFC1918 literal)")
+	cmd.Flags().StringVar(&username, "username", "admin",
+		"router administrator username")
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:8484",
 		"loopback HTTP listen address")
 	cmd.Flags().IntVar(&timeoutMS, "timeout-ms", 5000,

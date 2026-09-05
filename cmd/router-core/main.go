@@ -30,6 +30,9 @@ func serveBridge(args cmd.ServeArgs) error {
 	if args.Host != "" {
 		argv = append(argv, "--host", args.Host)
 	}
+	if args.Username != "" {
+		argv = append(argv, "--username", args.Username)
+	}
 	if args.Addr != "" {
 		argv = append(argv, "--addr", args.Addr)
 	}

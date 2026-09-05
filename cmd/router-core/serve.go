@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -68,8 +69,8 @@ func readRouterPassword(stdinFlag bool) ([]byte, error) {
 		if term.IsTerminal(int(os.Stdin.Fd())) {
 			return nil, errors.New("--password-stdin is set but stdin is a TTY; refusing to read a password from a terminal in plaintext")
 		}
-		buf, err := io.ReadAll(os.Stdin)
-		if err != nil {
+		buf, err := bufio.NewReader(os.Stdin).ReadBytes('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("read stdin: %w", err)
 		}
 		return []byte(strings.TrimRight(string(buf), "\r\n")), nil
@@ -89,12 +90,12 @@ func runServeCommand(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	host := fs.String("host", "192.168.1.1", "local router address (RFC1918 literal)")
+	username := fs.String("username", "admin", "router administrator username")
 	addr := fs.String("addr", "127.0.0.1:8484", "loopback HTTP listen address")
 	timeout := fs.Duration("timeout", 5*time.Second, "per-request timeout to the router")
 	mock := fs.Bool("mock", false, "run against a fixture-backed adapter (no network)")
 	mockPath := fs.String("mock-fixture", "", "path to a synthetic fixture (default: fixtures/synthetic/tplink-wr841n-v8)")
 	passwordStdin := fs.Bool("password-stdin", false, "read the admin password from stdin (refuses if stdin is a TTY)")
-	username := fs.String("username", "admin", "admin username for the router login")
 	if err := fs.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) || err == flag.ErrHelp {
 			return nil
@@ -119,7 +120,11 @@ func runServeCommand(args []string) error {
 		if !isRFC1918OrLoopback(*host) {
 			return fmt.Errorf("refusing to observe host %q: not loopback/RFC1918", *host)
 		}
-		fmt.Fprintf(os.Stderr, "router-core serve: reading admin password from stdin (timeout 30s)\n")
+		*username = strings.TrimSpace(*username)
+		if *username == "" || len(*username) > 128 || strings.ContainsAny(*username, "\r\n") {
+			return errors.New("invalid router administrator username")
+		}
+		fmt.Fprintf(os.Stderr, "router-core serve: reading admin password from stdin\n")
 		password, err := readRouterPassword(*passwordStdin)
 		if err != nil {
 			return fmt.Errorf("read password: %w", err)
@@ -129,15 +134,16 @@ func runServeCommand(args []string) error {
 		}
 		defer zeroBytes(&password)
 
-		store := &sessionStore{password: append([]byte(nil), password...)}
+		store = &sessionStore{password: append([]byte(nil), password...)}
 		defer zeroBytes(&store.password)
 
-		adapter := tplinkwr841v8.New(*host, transport.WithTimeout(*timeout))
+		routerAdapter := tplinkwr841v8.New(*host, transport.WithTimeout(*timeout))
 		loginCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := adapter.Login(loginCtx, *username, string(password)); err != nil {
+		if err := routerAdapter.Login(loginCtx, *username, string(password)); err != nil {
 			return fmt.Errorf("login: %w", err)
 		}
+		adapter = routerAdapter
 
 		fmt.Fprintf(os.Stderr, "router-core serve: authenticated, listening on %s\n", *addr)
 	}

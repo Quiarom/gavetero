@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -240,6 +242,82 @@ func TestServe_SecurityEndpoints(t *testing.T) {
 				t.Errorf("body missing state field: %v", body)
 			}
 		})
+	}
+}
+
+func TestServeCommand_StartsWithUsernameAndOpenStdin(t *testing.T) {
+	router := newWR841NForServe(t, "operator", "hunter2")
+	listener, err := listenLoopback()
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatalf("close reserved listener: %v", err)
+	}
+
+	command := exec.Command(os.Args[0], "-test.run=TestServeCommandHelper")
+	command.Env = append(os.Environ(),
+		"ROUTER_CORE_SERVE_HELPER=1",
+		"ROUTER_CORE_SERVE_HOST="+strings.TrimPrefix(router.server.URL, "http://"),
+		"ROUTER_CORE_SERVE_ADDR="+addr,
+	)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	command.Stderr = os.Stderr
+	if err := command.Start(); err != nil {
+		t.Fatalf("start helper: %v", err)
+	}
+	defer func() {
+		_ = command.Process.Kill()
+		_ = command.Wait()
+	}()
+
+	if _, err := io.WriteString(stdin, "hunter2\n"); err != nil {
+		t.Fatalf("write password: %v", err)
+	}
+
+	client := &http.Client{Timeout: 250 * time.Millisecond}
+	deviceURL := "http://" + addr + "/v0/device"
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		response, requestErr := client.Get(deviceURL)
+		if requestErr == nil {
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status: %d want 200", response.StatusCode)
+			}
+			var device struct {
+				Authenticated string `json:"authenticated"`
+			}
+			if err := json.NewDecoder(response.Body).Decode(&device); err != nil {
+				t.Fatalf("decode device: %v", err)
+			}
+			if device.Authenticated != "true" {
+				t.Fatalf("authenticated: %q want true", device.Authenticated)
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("serve did not start while stdin remained open")
+}
+
+func TestServeCommandHelper(t *testing.T) {
+	if os.Getenv("ROUTER_CORE_SERVE_HELPER") != "1" {
+		return
+	}
+	args := []string{
+		"serve",
+		"--host", os.Getenv("ROUTER_CORE_SERVE_HOST"),
+		"--username", "operator",
+		"--addr", os.Getenv("ROUTER_CORE_SERVE_ADDR"),
+		"--password-stdin",
+	}
+	if err := run(args); err != nil {
+		t.Fatal(err)
 	}
 }
 

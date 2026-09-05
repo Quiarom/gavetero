@@ -22,6 +22,7 @@ type inspectOptions struct {
 // serveOptions carries the resolved flag values for `router-core serve`.
 type serveOptions struct {
 	Host          string
+	Username      string
 	Addr          string
 	Timeout       time.Duration
 	Mock          bool
