@@ -5,7 +5,6 @@
 //	hermes      -> ~/.hermes/skills/gavetero/
 //	opencode     -> ~/.config/opencode/skills/gavetero/
 
-//
 // The install is a plain file copy. The user does not need
 // to restart the agent to pick up the skill (most agents
 // load SKILL.md lazily on first use, but Hermes in
@@ -91,7 +90,6 @@ func runIntegrationsList(stdout io.Writer) error {
 	}{
 		{"hermes", filepath.Join(homeDir(), ".hermes", "skills", "gavetero", "SKILL.md")},
 		{"opencode", filepath.Join(homeDir(), ".config", "opencode", "skills", "gavetero", "SKILL.md")},
-
 	}
 	fmt.Fprintln(stdout, "Gavetero skill install status:")
 	fmt.Fprintln(stdout, "------------------------------")
