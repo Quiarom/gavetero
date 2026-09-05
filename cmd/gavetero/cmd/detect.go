@@ -7,15 +7,15 @@
 // just the WR841N. It does the best it can with what is
 // available today:
 //
-//   1. If the host responds to the standard userRpm /login.htm
-//      path with a router login page, we report a
-//      TP-Link-class HTTP UI is reachable (heuristic; not a
-//      positive identification).
-//   2. We forward to the user the only thing we can really do
-//      without a specific adapter: ask the user to add their
-//      firmware to the adapter registry, or run with
-//      ROUTER_CORE_BIN pointing at a local sidecar that knows
-//      the firmware.
+//  1. If the host responds to the standard userRpm /login.htm
+//     path with a router login page, we report a
+//     TP-Link-class HTTP UI is reachable (heuristic; not a
+//     positive identification).
+//  2. We forward to the user the only thing we can really do
+//     without a specific adapter: ask the user to add their
+//     firmware to the adapter registry, or run with
+//     ROUTER_CORE_BIN pointing at a local sidecar that knows
+//     the firmware.
 //
 // Today, detect is honest: it tells the user what we know
 // (HTTP UI reachable) and what we don't (adapter-specific
@@ -202,4 +202,3 @@ func renderDetectHuman(stdout io.Writer, host string, p routerProbe) {
 		}
 	}
 }
-

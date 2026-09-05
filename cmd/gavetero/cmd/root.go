@@ -53,6 +53,7 @@ false.`,
 	root.AddCommand(newInspectCmd())
 	root.AddCommand(newDoctorCmd())
 	root.AddCommand(newIntegrationsCmd())
+	root.AddCommand(newDetectCmd())
 
 	return root
 }
