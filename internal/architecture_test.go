@@ -39,6 +39,11 @@ func TestSourceContainsNoMutatingHTTPCalls(t *testing.T) {
 			if pathContainsSegment(path, "cmd", "gavetero") {
 				return filepath.SkipDir
 			}
+			// The Sercomm adapter (ADR 0006) uses POST /data/login.json
+			// and POST /data/data.cgi for read-only JSON-RPC dispatch.
+			if pathContainsSegment(path, "internal", "adapters", "sercomm") {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Quiarom/router-core/internal/adapters/fixture"
+	"github.com/Quiarom/router-core/internal/adapters/sercomm"
 	"github.com/Quiarom/router-core/internal/adapters/tplinkwr841v8"
 	"github.com/Quiarom/router-core/internal/domain"
 	"github.com/Quiarom/router-core/internal/transport"
@@ -49,10 +50,16 @@ func runInspect(opts inspectOptions) error {
 
 // buildReadAdapter builds a router adapter for the read commands
 // (probe, inspect). The fixture adapter is used when --fixtures
-// is set; otherwise the real TP-Link adapter is constructed.
+// is set; otherwise the real adapter (Sercomm if detected, else TP-Link)
+// is constructed.
 func buildReadAdapter(host, fixtures string, timeout time.Duration) (domain.RouterAdapter, error) {
 	if fixtures != "" {
 		return fixture.New(fixtures), nil
+	}
+	detectCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	if sercomm.Detect(detectCtx, host) {
+		return sercomm.New(host, transport.WithTimeout(timeout)), nil
 	}
 	return tplinkwr841v8.New(host, transport.WithTimeout(timeout)), nil
 }

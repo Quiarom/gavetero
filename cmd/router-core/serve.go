@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Quiarom/router-core/internal/adapters/fixture"
+	"github.com/Quiarom/router-core/internal/adapters/sercomm"
 	"github.com/Quiarom/router-core/internal/adapters/tplinkwr841v8"
 	"github.com/Quiarom/router-core/internal/domain"
 	"github.com/Quiarom/router-core/internal/transport"
@@ -137,11 +138,29 @@ func runServeCommand(args []string) error {
 		store = &sessionStore{password: append([]byte(nil), password...)}
 		defer zeroBytes(&store.password)
 
-		routerAdapter := tplinkwr841v8.New(*host, transport.WithTimeout(*timeout))
-		loginCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := routerAdapter.Login(loginCtx, *username, string(password)); err != nil {
-			return fmt.Errorf("login: %w", err)
+		detectCtx, detectCancel := context.WithTimeout(context.Background(), 1*time.Second)
+		isSercomm := sercomm.Detect(detectCtx, *host)
+		detectCancel()
+
+		var routerAdapter domain.RouterAdapter
+		if isSercomm {
+			sa := sercomm.New(*host, transport.WithTimeout(*timeout))
+			loginCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := sa.Login(loginCtx, *username, string(password)); err != nil {
+				return fmt.Errorf("login: %w", err)
+			}
+			routerAdapter = sa
+			fmt.Fprintf(os.Stderr, "router-core serve: detected Sercomm gateway on %s\n", *host)
+		} else {
+			ta := tplinkwr841v8.New(*host, transport.WithTimeout(*timeout))
+			loginCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := ta.Login(loginCtx, *username, string(password)); err != nil {
+				return fmt.Errorf("login: %w", err)
+			}
+			routerAdapter = ta
+			fmt.Fprintf(os.Stderr, "router-core serve: using TP-Link WR841N adapter on %s\n", *host)
 		}
 		adapter = routerAdapter
 

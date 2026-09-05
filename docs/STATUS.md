@@ -160,10 +160,10 @@ The verification is encoded in three layers:
 - **No live router integration tests** beyond an opt-in `TestLiveOptIn`
   that runs only when `ROUTER_LIVE_TESTS=1` is set. Default behavior
   is fixture-based or httptest-mock-based.
-- **No universal adapter.** The desktop flow currently accepts the
-  verified TP-Link WR841N v8.4 adapter. Other router families remain
-  unsupported until their authentication and observation recipes are
-  captured and tested.
+- **Supported adapters.** The runtime supports the verified TP-Link
+  WR841N v8.4 adapter and the Sercomm / Sagemcom gateway adapter
+  (AT904X, see ADR 0006). Other router families remain unsupported until
+  their observation recipes are captured and tested.
 - **No mutation surface.** The adapter cannot change settings, reboot,
   reset, or write anything to the router. This is enforced by the
   architecture test in `internal/architecture_test.go` (which would
