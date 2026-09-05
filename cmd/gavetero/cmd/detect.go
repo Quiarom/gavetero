@@ -23,14 +23,12 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -100,7 +98,7 @@ func runDetect(stdout io.Writer, host, output string) error {
 		b, _ := json.MarshalIndent(probe, "", "  ")
 		fmt.Fprintln(stdout, string(b))
 	default:
-		renderHuman(stdout, host, probe)
+		renderDetectHuman(stdout, host, probe)
 	}
 	return nil
 }
@@ -178,7 +176,7 @@ func probeRouter(host string) routerProbe {
 	return probe
 }
 
-func renderHuman(stdout io.Writer, host string, p routerProbe) {
+func renderDetectHuman(stdout io.Writer, host string, p routerProbe) {
 	fmt.Fprintf(stdout, "Gavetero Detect: %s\n", host)
 	fmt.Fprintln(stdout, "================")
 	fmt.Fprintln(stdout)
@@ -205,5 +203,3 @@ func renderHuman(stdout io.Writer, host string, p routerProbe) {
 	}
 }
 
-// ensure net, url imports are used somewhere even if not directly
-var _ = url.Parse
