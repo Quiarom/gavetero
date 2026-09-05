@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vite'
 
+const isTauriBuild = Boolean(process.env.TAURI_ENV_PLATFORM)
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -12,9 +14,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),
-      // Web shim for the Tauri API. The desktop build uses
-      // the real @tauri-apps/api/core from node_modules.
-      '@tauri-apps/api/core': path.resolve(import.meta.dirname, './src/lib/web/tauri-core.js'),
+      ...(isTauriBuild
+        ? {}
+        : {
+            // El build web necesita un sustituto porque no tiene runtime Tauri.
+            '@tauri-apps/api/core': path.resolve(import.meta.dirname, './src/lib/web/tauri-core.js'),
+          }),
     },
   },
   server: {

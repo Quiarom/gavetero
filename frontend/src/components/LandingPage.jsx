@@ -1,284 +1,321 @@
 import React, { useState } from "react";
-import { 
-  ShieldCheck, 
-  Cpu, 
-  Lock, 
-  Radio, 
-  ArrowRight, 
-  CheckCircle2, 
-  Code2, 
-  Sparkles,
-  Server,
-  Eye,
+import {
+  ArrowRight,
+  Check,
   Copy,
-  Check
+  Cpu,
+  Download,
+  ExternalLink,
+  Eye,
+  Lock,
+  Server,
+  ShieldCheck,
+  Sparkles,
+  Terminal,
+  Zap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { mockDevice, mockStatus, mockClients, mockCapabilities, mockSecurity } from "@/data/mockData";
 
 export function LandingPage({ onOpenDashboard }) {
-  const [selectedEndpoint, setSelectedEndpoint] = useState("/v0/device");
-  const [copied, setCopied] = useState(false);
+  const [copiedCurl, setCopiedCurl] = useState(false);
+  const curlCommand = "curl -sSf https://raw.githubusercontent.com/Quiarom/router-core/integration/gavetero/install.sh | sh";
 
-  const getEndpointData = (endpoint) => {
-    switch (endpoint) {
-      case "/v0/device":
-        return mockDevice;
-      case "/v0/status":
-        return mockStatus;
-      case "/v0/clients":
-        return mockClients;
-      case "/v0/capabilities":
-        return mockCapabilities;
-      case "/v0/security/dmz":
-        return mockSecurity.dmz;
-      default:
-        return mockDevice;
-    }
-  };
-
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyCurl = () => {
+    navigator.clipboard.writeText(curlCommand);
+    setCopiedCurl(true);
+    setTimeout(() => setCopiedCurl(false), 2000);
   };
 
   return (
-    <div className="space-y-24 py-8 pb-20">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden pt-6 pb-12 sm:pt-12">
-        <div className="absolute inset-0 -z-10 bg-neutral-900" />
-        
-        <div className="mx-auto max-w-5xl text-center px-4 sm:px-6">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400 mb-8">
-            <Sparkles className="h-3.5 w-3.5" />
-            <span>Submission for GMI Cloud × MiniMax Week (Track: Reasoning)</span>
+    <div className="mx-auto max-w-4xl px-4 sm:px-6 py-12 space-y-20 text-neutral-200 font-sans">
+      {/* 1. HERO LIMPIO */}
+      <header className="space-y-6 text-center sm:text-left pt-2">
+        <div className="inline-flex items-center gap-2 border-2 border-primary bg-primary/10 px-3 py-1 text-xs font-mono font-bold text-primary uppercase">
+          <Sparkles className="h-3.5 w-3.5" />
+          <span>GMI Cloud × MiniMax Week 2026</span>
+          <span className="text-neutral-500">•</span>
+          <span className="text-white">Track: Reasoning</span>
+        </div>
+
+        <h1 className="text-3xl sm:text-5xl font-black uppercase tracking-tight text-white font-mono leading-tight">
+          Control Plane Local con IA para Routers Legados
+        </h1>
+
+        <p className="text-base sm:text-lg text-neutral-300 leading-relaxed max-w-3xl">
+          Convierte paneles de administración antiguos en una <strong className="text-white font-mono">API HTTP tipada en loopback</strong> y un <strong className="text-primary font-mono">agente de razonamiento MiniMax M3</strong> servido en <strong className="text-white">GMI Cloud</strong>. 100% solo lectura, cero riesgo de desconfiguración y privacidad total RFC1918.
+        </p>
+
+        {/* CTAs */}
+        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 pt-2 font-mono text-xs">
+          <a
+            href="#instalar"
+            className="h-11 px-5 bg-primary hover:bg-primary-hover text-white font-bold uppercase tracking-wider flex items-center gap-2 border-2 border-primary transition-colors cursor-pointer"
+          >
+            <Download className="h-4 w-4" />
+            <span>Instalar o Descargar</span>
+          </a>
+
+          <Button
+            variant="outline"
+            onClick={() => onOpenDashboard && onOpenDashboard()}
+            className="h-11 px-5 gap-2 border-2 border-neutral-700 bg-neutral-900 text-neutral-200 hover:border-white hover:text-white"
+          >
+            <Zap className="h-4 w-4 text-emerald-400" />
+            <span>Probar Asistente en Vivo</span>
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+
+          <a
+            href="https://github.com/Quiarom/router-core"
+            target="_blank"
+            rel="noreferrer"
+            className="h-11 px-4 bg-black hover:bg-neutral-900 border-2 border-neutral-800 text-neutral-400 hover:text-white flex items-center gap-2 transition-colors"
+          >
+            <ExternalLink className="h-4 w-4" />
+            <span>GitHub</span>
+          </a>
+        </div>
+      </header>
+
+      {/* 2. INSTALACIÓN Y DESCARGAS (DIRECTO Y SIN CARDS ANIDADAS) */}
+      <section id="instalar" className="border-t-2 border-neutral-800 pt-12 space-y-6">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-mono font-bold text-primary uppercase mb-1">
+            <Terminal className="h-4 w-4" />
+            <span>Instalación Rápida</span>
           </div>
-
-          <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-6xl font-sans">
-            A Safe, Read-Only AI Layer for <br className="hidden sm:block" />
-            <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
-              Legacy Consumer Routers
-            </span>
-          </h1>
-
-          <p className="mt-6 text-lg text-slate-300 max-w-3xl mx-auto leading-relaxed">
-            Turns 2013 consumer routers into a typed HTTP API on loopback that a{" "}
-            <strong className="text-emerald-400 font-semibold">MiniMax M3 reasoning layer</strong> can safely observe.
-            Mutations are unrepresentable. Zero writes. RFC1918 strictly enforced.
+          <h2 className="text-2xl font-black uppercase tracking-tight text-white font-mono">
+            1 Comando en Terminal (CLI gavetero)
+          </h2>
+          <p className="mt-1 text-sm text-neutral-400">
+            Descarga automática para Linux y macOS (AMD64 y ARM64), sin permisos de superusuario ni dependencias externas.
           </p>
+        </div>
 
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-            <Button 
-              size="lg" 
-              onClick={onOpenDashboard}
-              className="gap-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold shadow-lg shadow-emerald-950/40"
+        {/* Terminal Box */}
+        <div className="flex items-center justify-between gap-3 border-2 border-neutral-800 bg-black p-3.5 font-mono text-xs">
+          <div className="flex items-center gap-2 overflow-x-auto text-neutral-200 pl-1">
+            <span className="text-primary font-bold">$</span>
+            <span className="select-all truncate">{curlCommand}</span>
+          </div>
+          <button
+            onClick={copyCurl}
+            className="flex items-center gap-1.5 shrink-0 border-2 border-neutral-700 bg-neutral-900 hover:border-primary hover:text-primary px-3 py-1.5 text-xs font-bold uppercase text-neutral-300 transition-colors cursor-pointer"
+          >
+            {copiedCurl ? (
+              <>
+                <Check className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="text-emerald-400">Copiado</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3.5 w-3.5" />
+                <span>Copiar</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Quick Commands List */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs pt-1">
+          <div className="border border-neutral-800 bg-neutral-950 p-3 space-y-1">
+            <div className="text-white font-bold">$ gvt setup</div>
+            <div className="text-neutral-500 text-[11px]">Configura tu API Key de GMI Cloud.</div>
+          </div>
+          <div className="border border-neutral-800 bg-neutral-950 p-3 space-y-1">
+            <div className="text-white font-bold">$ gvt inspect</div>
+            <div className="text-neutral-500 text-[11px]">Inspecciona router y capacidades.</div>
+          </div>
+          <div className="border border-neutral-800 bg-neutral-950 p-3 space-y-1">
+            <div className="text-white font-bold">$ gvt ask "pregunta"</div>
+            <div className="text-neutral-500 text-[11px]">Razona y audita con MiniMax M3.</div>
+          </div>
+        </div>
+
+        {/* Desktop App Download Buttons */}
+        <div className="pt-4 space-y-3">
+          <div className="text-xs font-mono font-bold uppercase text-neutral-400">
+            O descarga la App de Escritorio con Interfaz Gráfica (Tauri 2):
+          </div>
+          <div className="flex flex-wrap gap-2.5 font-mono text-xs">
+            <a
+              href="https://github.com/Quiarom/router-core/releases/latest"
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2.5 border-2 border-neutral-800 bg-neutral-950 hover:border-primary hover:text-white text-neutral-300 flex items-center gap-2 transition-colors"
             >
-              Open Live Dashboard
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-            <a 
-              href="#api-explorer" 
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/80 px-6 py-2.5 text-sm font-medium text-slate-200 hover:bg-slate-800 transition-colors"
+              <Download className="h-3.5 w-3.5 text-primary" />
+              <span>Linux (.AppImage / .deb / .rpm)</span>
+            </a>
+
+            <a
+              href="https://github.com/Quiarom/router-core/releases/latest"
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2.5 border-2 border-neutral-800 bg-neutral-950 hover:border-primary hover:text-white text-neutral-300 flex items-center gap-2 transition-colors"
             >
-              <Code2 className="h-4 w-4 text-emerald-400" />
-              Explore API Endpoints
+              <Download className="h-3.5 w-3.5 text-primary" />
+              <span>macOS (.dmg Apple Silicon / Intel)</span>
+            </a>
+
+            <a
+              href="https://github.com/Quiarom/router-core/releases/latest"
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2.5 border-2 border-neutral-800 bg-neutral-950 hover:border-primary hover:text-white text-neutral-300 flex items-center gap-2 transition-colors"
+            >
+              <Download className="h-3.5 w-3.5 text-primary" />
+              <span>Windows (.exe / .zip)</span>
             </a>
           </div>
-
-          {/* Device & Architecture pill row */}
-          <div className="mt-12 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-400">
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-md border border-slate-800 bg-slate-900/60 font-mono">
-              <Radio className="h-3 w-3 text-emerald-400" />
-              Target: TP-Link TL-WR841N v8.4
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-md border border-slate-800 bg-slate-900/60 font-mono">
-              <Cpu className="h-3 w-3 text-cyan-400" />
-              Model: MiniMax M3 (1M context)
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-md border border-slate-800 bg-slate-900/60 font-mono">
-              <Lock className="h-3 w-3 text-amber-400" />
-              Transport: GET only • 2 MiB cap
-            </div>
-          </div>
         </div>
       </section>
 
-      {/* Safety Invariants Section */}
-      <section className="mx-auto max-w-6xl px-4 sm:px-6">
-        <div className="text-center mb-12">
-          <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Invariants Hardened by Design
+      {/* 3. SOBRE EL PROYECTO & SEGURIDAD */}
+      <section className="border-t-2 border-neutral-800 pt-12 space-y-8">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-mono font-bold text-emerald-400 uppercase mb-1">
+            <ShieldCheck className="h-4 w-4" />
+            <span>Arquitectura y Filosofía</span>
+          </div>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-white font-mono">
+            ¿Cómo funciona router-core?
           </h2>
-          <p className="mt-2 text-sm text-slate-400 max-w-xl mx-auto">
-            Traditional tools guess protocols or risk rebooting home networks. router-core enforces non-negotiable safety rules.
+          <p className="mt-2 text-sm text-neutral-300 leading-relaxed max-w-3xl">
+            Los routers domésticos viejos (como el TP-Link WR841N) tienen interfaces web obsoletas, lentas y sin APIs. En lugar de arriesgarse a flashear firmware o usar scrapers inestables, <strong className="text-white">router-core</strong> levanta un servicio local en <code className="text-primary font-mono font-bold">127.0.0.1:8484</code> que expone el estado del router como JSON tipado y permite que un agente <strong className="text-white">MiniMax M3</strong> en GMI Cloud audite la seguridad en lenguaje natural.
           </p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <Card className="border-slate-800 bg-slate-900/40">
-            <CardHeader>
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 mb-2">
-                <Eye className="h-5 w-5" />
-              </div>
-              <CardTitle>GET-Only Invariant</CardTitle>
-              <CardDescription>
-                The transport client rejects any POST, PUT or DELETE. The mutation path (<code className="text-emerald-400">CapMutate</code>) does not exist in the code.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-
-          <Card className="border-slate-800 bg-slate-900/40">
-            <CardHeader>
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-500/10 text-cyan-400 mb-2">
-                <Lock className="h-5 w-5" />
-              </div>
-              <CardTitle>RFC1918 Loopback Only</CardTitle>
-              <CardDescription>
-                Refuses public internet IPs, domain names, and cross-host redirects. The runtime only talks directly to your private router gateway.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-
-          <Card className="border-slate-800 bg-slate-900/40">
-            <CardHeader>
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400 mb-2">
-                <ShieldCheck className="h-5 w-5" />
-              </div>
-              <CardTitle>First-Class Unknown</CardTitle>
-              <CardDescription>
-                Absence of data is never turned into <code className="text-amber-300">false</code>. States explicitly reflect: <em>verified</em>, <em>absent</em>, <em>unverified</em>, or <em>unavailable</em>.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-
-          <Card className="border-slate-800 bg-slate-900/40">
-            <CardHeader>
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10 text-purple-400 mb-2">
-                <Server className="h-5 w-5" />
-              </div>
-              <CardTitle>2 MiB Response Cap</CardTitle>
-              <CardDescription>
-                Guards local process memory against unbounded firmware memory dumps or infinite streaming loops from legacy routers.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </div>
-      </section>
-
-      {/* Interactive API Explorer */}
-      <section id="api-explorer" className="mx-auto max-w-6xl px-4 sm:px-6">
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
-          <div>
-            <div className="inline-flex items-center gap-1.5 text-xs font-mono text-emerald-400 mb-2">
-              <Code2 className="h-4 w-4" />
-              <span>STABLE HTTP SURFACE</span>
+        {/* 4 Invariantes Clave (Sin cards pesadas) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2 font-sans text-sm">
+          <div className="border-l-2 border-emerald-500 pl-4 space-y-1.5">
+            <div className="font-mono font-bold text-xs uppercase text-white flex items-center gap-2">
+              <Eye className="h-4 w-4 text-emerald-400" />
+              <span>100% Solo Lectura (GET Only)</span>
             </div>
-            <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              Contract-First API Explorer
-            </h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Defined in <code className="text-slate-300">docs/FRONTEND_CONTRACT.md</code> and consumed by both this UI and MiniMax M3.
+            <p className="text-xs text-neutral-400 leading-relaxed">
+              La mutación (<code className="text-emerald-400 font-mono">CapMutate</code>) es inexistente en el sistema de tipos. Es imposible reiniciar o desconfigurar el router.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            {[
-              "/v0/device",
-              "/v0/status",
-              "/v0/clients",
-              "/v0/capabilities",
-              "/v0/security/dmz"
-            ].map((endpoint) => (
-              <button
-                key={endpoint}
-                onClick={() => setSelectedEndpoint(endpoint)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
-                  selectedEndpoint === endpoint
-                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                    : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"
-                }`}
-              >
-                {endpoint}
-              </button>
-            ))}
+          <div className="border-l-2 border-primary pl-4 space-y-1.5">
+            <div className="font-mono font-bold text-xs uppercase text-white flex items-center gap-2">
+              <Cpu className="h-4 w-4 text-primary" />
+              <span>Razonamiento con MiniMax M3</span>
+            </div>
+            <p className="text-xs text-neutral-400 leading-relaxed">
+              Usa 1M de contexto en GMI Cloud para interpretar tablas ARP, cifrado Wi-Fi y puertos con fallback automático a MiniMax M2.7.
+            </p>
+          </div>
+
+          <div className="border-l-2 border-amber-500 pl-4 space-y-1.5">
+            <div className="font-mono font-bold text-xs uppercase text-white flex items-center gap-2">
+              <Lock className="h-4 w-4 text-amber-400" />
+              <span>Aislamiento RFC1918 &amp; Loopback</span>
+            </div>
+            <p className="text-xs text-neutral-400 leading-relaxed">
+              Rechaza IPs públicas de Internet y dominios externos. Inmune a ataques SSRF y DNS rebinding.
+            </p>
+          </div>
+
+          <div className="border-l-2 border-cyan-500 pl-4 space-y-1.5">
+            <div className="font-mono font-bold text-xs uppercase text-white flex items-center gap-2">
+              <Server className="h-4 w-4 text-cyan-400" />
+              <span>Estados Honestos (First-Class Unknown)</span>
+            </div>
+            <p className="text-xs text-neutral-400 leading-relaxed">
+              Nunca inventa datos; reporta explícitamente si un parámetro está <em>verified</em>, <em>absent</em> o <em>unsupported</em>.
+            </p>
           </div>
         </div>
+      </section>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-950 overflow-hidden shadow-2xl">
-          <div className="flex items-center justify-between border-b border-slate-850 px-4 py-3 bg-slate-900/60">
-            <div className="flex items-center gap-3">
-              <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-xs font-mono font-semibold text-emerald-400">
-                GET
-              </span>
-              <span className="text-xs font-mono text-slate-200">
-                http://127.0.0.1:8484{selectedEndpoint}
-              </span>
-            </div>
-            <button
-              onClick={() => copyToClipboard(JSON.stringify(getEndpointData(selectedEndpoint), null, 2))}
-              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 font-mono transition-colors"
+      {/* 4. COMPARATIVA DE SOLUCIONES */}
+      <section className="border-t-2 border-neutral-800 pt-12 space-y-6">
+        <div>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-white font-mono">
+            Comparativa Frente a Otras Soluciones
+          </h2>
+          <p className="mt-1 text-sm text-neutral-400">
+            Por qué router-core es la alternativa más segura y rápida para hardware legado.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto border-2 border-neutral-800 bg-black font-mono text-xs">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b-2 border-neutral-800 bg-neutral-900 text-neutral-300">
+                <th className="p-3.5 font-bold uppercase">Criterio</th>
+                <th className="p-3.5 font-bold uppercase text-neutral-400">Web Scraping</th>
+                <th className="p-3.5 font-bold uppercase text-neutral-400">OpenWrt / DD-WRT</th>
+                <th className="p-3.5 font-bold uppercase text-primary bg-primary/10 border-l-2 border-primary">router-core + MiniMax M3</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y border-neutral-800 text-neutral-300">
+              <tr>
+                <td className="p-3.5 font-sans font-semibold text-white">Riesgo de Daño al Router</td>
+                <td className="p-3.5 text-rose-400">Medio (POST inestables)</td>
+                <td className="p-3.5 text-rose-400">Alto (Flasheo de ROM)</td>
+                <td className="p-3.5 text-emerald-400 font-bold bg-primary/5 border-l-2 border-primary">Cero (GET Only forzado)</td>
+              </tr>
+              <tr>
+                <td className="p-3.5 font-sans font-semibold text-white">Auditoría con IA</td>
+                <td className="p-3.5 text-neutral-500">No</td>
+                <td className="p-3.5 text-neutral-500">No</td>
+                <td className="p-3.5 text-emerald-400 font-bold bg-primary/5 border-l-2 border-primary">MiniMax M3 (1M Context)</td>
+              </tr>
+              <tr>
+                <td className="p-3.5 font-sans font-semibold text-white">Instalación</td>
+                <td className="p-3.5 text-neutral-400">Scripts manuales</td>
+                <td className="p-3.5 text-rose-400">Desarmar / Serial</td>
+                <td className="p-3.5 text-emerald-400 font-bold bg-primary/5 border-l-2 border-primary">1 Comando cURL o App GUI</td>
+              </tr>
+              <tr>
+                <td className="p-3.5 font-sans font-semibold text-white">Manejo de Errores</td>
+                <td className="p-3.5 text-rose-400">Inventa falsos false</td>
+                <td className="p-3.5 text-neutral-400">Depende de la distro</td>
+                <td className="p-3.5 text-emerald-400 font-bold bg-primary/5 border-l-2 border-primary">First-Class Unknown (Honesto)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* 5. FOOTER / HACKATHON INFO & CTA FINAL */}
+      <footer className="border-t-2 border-neutral-800 pt-10 pb-6 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="font-mono font-bold text-sm text-white">router-core</div>
+            <p className="text-xs text-neutral-400">
+              Proyecto creado para la hackathon <strong className="text-white">GMI Cloud × MiniMax Week 2026</strong>.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 font-mono text-xs">
+            <Button
+              variant="default"
+              onClick={() => onOpenDashboard && onOpenDashboard()}
+              className="h-10 px-4 gap-2"
             >
-              {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-              <span>{copied ? "Copied" : "Copy JSON"}</span>
-            </button>
-          </div>
-          <div className="p-4 overflow-x-auto max-h-96">
-            <pre className="font-mono text-xs text-slate-300 leading-relaxed">
-              {JSON.stringify(getEndpointData(selectedEndpoint), null, 2)}
-            </pre>
-          </div>
-        </div>
-      </section>
+              <Zap className="h-3.5 w-3.5" />
+              <span>Abrir Asistente</span>
+            </Button>
 
-      {/* MiniMax Reasoning Workflow */}
-      <section className="mx-auto max-w-6xl px-4 sm:px-6">
-        <div className="rounded-2xl border border-slate-800/80 bg-gradient-to-b from-slate-900/60 to-slate-950 p-8 sm:p-12 shadow-xl">
-          <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 rounded-md bg-purple-500/10 px-2.5 py-1 text-xs font-medium text-purple-400 mb-4 border border-purple-500/20">
-              <Cpu className="h-3.5 w-3.5" />
-              Reasoning Engine (MiniMax M3)
-            </div>
-            <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              From Raw JavaScript Dashboards to Natural Language Answers
-            </h2>
-            <p className="mt-3 text-sm text-slate-300 leading-relaxed">
-              Instead of an operator deciphering 2013 web forms, a question like{" "}
-              <span className="text-emerald-400 font-mono font-medium">"¿Está expuesta mi red?"</span> triggers a deterministic, read-only sequence of tool calls:
-            </p>
-
-            <div className="mt-6 space-y-3 font-mono text-xs">
-              <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3 text-slate-300">
-                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span>1. Agent queries <strong className="text-white">/v0/device</strong> &amp; <strong className="text-white">/v0/capabilities</strong> to establish ground truth.</span>
-              </div>
-              <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3 text-slate-300">
-                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span>2. Checks <strong className="text-white">/v0/security/dmz</strong> and <strong className="text-white">/v0/security/forwarding</strong> for exposed hosts.</span>
-              </div>
-              <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/80 p-3 text-slate-300">
-                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span>3. MiniMax synthesizes findings with zero mutation risk and presents clear, human recommendations.</span>
-              </div>
-            </div>
+            <a
+              href="https://github.com/Quiarom/router-core"
+              target="_blank"
+              rel="noreferrer"
+              className="h-10 px-4 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 flex items-center gap-1.5 transition-colors"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              <span>Ver Repo</span>
+            </a>
           </div>
         </div>
-      </section>
+      </footer>
 
-      {/* Quickstart Banner */}
-      <section className="mx-auto max-w-4xl px-4 text-center">
-        <h3 className="text-xl font-bold text-white mb-3">Ready to inspect your router?</h3>
-        <p className="text-sm text-slate-400 mb-6">
-          Build the Go binary and start the HTTP observation server on loopback in seconds.
-        </p>
-        <div className="inline-flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 font-mono text-xs text-slate-300 max-w-xl w-full">
-          <span>./bin/router-core serve --host 192.168.1.1 --addr 127.0.0.1:8484</span>
-          <Button size="sm" onClick={onOpenDashboard} className="h-7 text-xs ml-3">
-            Open Dashboard
-          </Button>
-        </div>
-      </section>
     </div>
   );
 }
+
+export default LandingPage;

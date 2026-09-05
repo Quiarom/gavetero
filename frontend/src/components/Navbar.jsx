@@ -26,12 +26,22 @@ export function Navbar({
           </span>
         </div>
 
-        <nav className="flex items-center justify-center gap-6 sm:gap-10 font-mono text-base sm:text-lg md:absolute md:left-1/2 md:-translate-x-1/2">
+        <nav className="flex items-center justify-center gap-4 sm:gap-8 font-mono text-sm sm:text-base md:absolute md:left-1/2 md:-translate-x-1/2">
+          <button
+            onClick={() => setActiveTab("landing")}
+            className={`font-black uppercase tracking-wider transition-colors cursor-pointer ${
+              activeTab === "landing"
+                ? "text-primary border-b-2 border-primary"
+                : "text-neutral-400 hover:text-white"
+            }`}
+          >
+            Inicio &amp; Descargas
+          </button>
           <button
             onClick={() => setActiveTab("assistant")}
             className={`font-black uppercase tracking-wider transition-colors cursor-pointer ${
               activeTab === "assistant"
-                ? "text-primary"
+                ? "text-primary border-b-2 border-primary"
                 : "text-neutral-400 hover:text-white"
             }`}
           >
@@ -41,7 +51,7 @@ export function Navbar({
             onClick={() => setActiveTab("telemetry")}
             className={`font-black uppercase tracking-wider transition-colors cursor-pointer ${
               activeTab === "telemetry"
-                ? "text-primary"
+                ? "text-primary border-b-2 border-primary"
                 : "text-neutral-400 hover:text-white"
             }`}
           >

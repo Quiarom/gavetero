@@ -2,13 +2,14 @@ import React, { useState } from "react";
 
 import { AiAssistantView } from "@/components/AiAssistantView";
 import { Dashboard } from "@/components/Dashboard";
+import { LandingPage } from "@/components/LandingPage";
 import { Navbar } from "@/components/Navbar";
 import { RouterSetup } from "@/components/RouterSetup";
 import { disconnectRouter, isDesktopRuntime } from "@/lib/desktop";
 
 export function App() {
   const isDesktop = isDesktopRuntime();
-  const [activeTab, setActiveTab] = useState("assistant");
+  const [activeTab, setActiveTab] = useState(isDesktop ? "assistant" : "landing");
   const [isLive, setIsLive] = useState(false);
   const [wanStatus, setWanStatus] = useState("unknown");
   const [connection, setConnection] = useState(null);
@@ -44,7 +45,9 @@ export function App() {
       />
 
       <main className="flex-1">
-        {activeTab === "assistant" ? (
+        {activeTab === "landing" ? (
+          <LandingPage onOpenDashboard={() => setActiveTab("assistant")} />
+        ) : activeTab === "assistant" ? (
           <AiAssistantView isLive={isLive} />
         ) : (
           <Dashboard

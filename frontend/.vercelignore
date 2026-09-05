@@ -1,0 +1,5 @@
+src-tauri
+node_modules
+dist
+.git
+.env*.local
