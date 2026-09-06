@@ -184,13 +184,13 @@ func runInspect(stdout, stderr io.Writer, opts inspectOptions) error {
 		})
 	case "jsonl":
 		return renderAskJSONL(stdout, map[string]any{
-			"kind":     "inspect",
-			"source":   inspectSource(opts),
-			"mode":     inspectMode(opts),
-			"router":   device,
-			"status":   status,
-			"clients":  clients,
-			"caps":     caps,
+			"kind":    "inspect",
+			"source":  inspectSource(opts),
+			"mode":    inspectMode(opts),
+			"router":  device,
+			"status":  status,
+			"clients": clients,
+			"caps":    caps,
 		})
 	default:
 		return renderInspectHuman(stdout, caps, device, status, clients, opts)
@@ -392,6 +392,36 @@ func findRouterCoreBin() (string, error) {
 	return "", fmt.Errorf(`router-core sidecar not found.
 
 Gavetero normally embeds router-core inside itself. If you see
+this error, the gavetero binary was built without the embed
+step. Run from the repo root:
+
+  make build
+  make install-user`)
+}
+
+func findRouterCoreAgentBin() (string, error) {
+	// Prefer the embedded sidecar (extracted from the gavetero
+	// binary itself). Falls back to the legacy disk search.
+	if path, err := sidecars.Get("router-core-agent"); err == nil {
+		return path, nil
+	}
+	if env := os.Getenv("ROUTER_CORE_AGENT_BIN"); env != "" {
+		if _, err := os.Stat(env); err == nil {
+			return env, nil
+		}
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "router-core-agent")
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, nil
+		}
+	}
+	if path, err := exec.LookPath("router-core-agent"); err == nil {
+		return path, nil
+	}
+	return "", fmt.Errorf(`router-core-agent sidecar not found.
+
+Gavetero normally embeds router-core-agent inside itself. If you see
 this error, the gavetero binary was built without the embed
 step. Run from the repo root:
 

@@ -16,7 +16,6 @@ func newServeCmd() *cobra.Command {
 	var mock bool
 	var mockFixture string
 	var passwordStdin bool
-	var username string
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -65,8 +64,6 @@ the network, so you can develop without hardware.`,
 		"path to a synthetic fixture (default: fixtures/synthetic/tplink-wr841n-v8)")
 	cmd.Flags().BoolVar(&passwordStdin, "password-stdin", false,
 		"read the admin password from stdin (refuses if stdin is a TTY)")
-	cmd.Flags().StringVar(&username, "username", "admin",
-		"admin username for the router login")
 
 	return cmd
 }
