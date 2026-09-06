@@ -17,14 +17,9 @@ import (
 	"runtime"
 )
 
-// Binaries is the embedded FS containing router-core and
-// router-core-agent. They are placed here at build time by
-// the Makefile.
-var Binaries embed.FS
-
 //go:embed router-core
 //go:embed router-core-agent
-var _placeholder embed.FS // satisfy the "embed imported" check
+var Binaries embed.FS
 
 // Get returns the absolute path to a sidecar extracted from
 // the embedded FS to a temp directory. The first call for
@@ -77,6 +72,10 @@ func extract() error {
 		return err
 	}
 	state = pkgState{dir: dir, corePath: corePath, agentPath: agentPath}
+	// Go 1.24+: schedule cleanup at process exit. AddCleanup
+	// is preferred over SetFinalizer because the cleanup arg
+	// does not keep the parent object alive and it does not
+	// leak the temp dir on reference cycles.
 	runtime.AddCleanup(&dir, func(d string) { _ = os.RemoveAll(d) }, dir)
 	return nil
 }
@@ -102,5 +101,5 @@ func Read(name string) ([]byte, error) {
 	return nil, fmt.Errorf("unknown sidecar %q", name)
 }
 
-// satisfy unused import
+// satisfy unused import (io is used for io.EOF sentinel)
 var _ = io.EOF
