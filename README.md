@@ -1,266 +1,243 @@
-# router-core
+# Gavetero
 
-> **Local-first control plane for legacy consumer routers.**
-
-Give an aging router dashboard a typed local API and an
-evidence-aware AI agent — without replacing the firmware.
+> **A typed local API and an evidence-aware AI agent for legacy
+> consumer routers — without replacing the firmware.**
 
 [![CI](https://github.com/Quiarom/router-core/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![GMI Cloud × MiniMax Week](https://img.shields.io/badge/GMI_Cloud-MiniMax_Week-2026-08-24_→_2026-09-06-blue)](https://www.gmicloud.ai/minimax-week)
+[![MiniMax Week 2026](https://img.shields.io/badge/MiniMax_Week-2026-blue)](https://www.gmicloud.ai/minimax-week)
 
-A real run against the lab unit (192.168.1.1, admin/admin):
+Gavetero turns an aging router dashboard into a typed local API
+that you (or an AI agent) can investigate. The runtime is
+read-only: it never mutates the router. Unknown is reported
+as unknown — never as false.
+
+## Why
+
+Most home routers still expose a 2014-era web UI. The
+credentials are `admin/admin` (or whatever the user set), the
+firmware is EOL, and the only "API" is the HTML the user
+sees in their browser. An LLM tool that wants to answer
+"is my network exposed?" has nothing structured to read.
+
+Gavetero gives that LLM a typed surface, a model-aware
+sidecar, and a model that knows how to use both. The router
+keeps running its old firmware. Gavetero never touches it.
+
+## How
+
+Gavetero is a single Go binary that embeds the runtime and
+the agent sidecar. The CLI spawns them as needed:
 
 ```text
-router-core-agent: pregunta="Is my Wi-Fi exposed?"
-router-core-agent: get_security -> HTTP 200
-
-**Hechos observados (verified)**
-- Wi-Fi **activado**.
-- SSID visible: TP-LINK_CBEC16.
-- Seguridad: WPA2-PSK (Cipher 332 = AES-CCMP en v8.4).
-- Clave precompartida: configurada (no se expone el contenido).
-- WPS / UPnP / Gestión remota: ausentes en este firmware.
-- Firmware: 3.15.9 Build 140724 Rel.63227n (2014; EOL).
-
-Recomendaciones
-- Cambiar el SSID a uno neutro.
-- Sustituir la PSK por una de al menos 12-16 caracteres aleatorios.
-- Mantener WPS desactivado (ya lo está).
+┌──────────────────────────────────────────────────┐
+│                      gvt                          │
+│  ┌────────────┐    ┌────────────────────┐         │
+│  │ router-core│    │   router-core-agent │         │
+│  │  (HTTP API)│◄──│  (M3 / M2.7 via GMI) │         │
+│  └────────────┘    └────────────────────┘         │
+│         ▲                                          │
+│         │ http (real router OR fixture)            │
+└─────────┼──────────────────────────────────────────┘
+          │
+   ┌──────┴───────┐
+   │  TP-Link    │   ← real router on the LAN
+   │  WR841N     │      OR the embedded fixture
+   │  or other   │      for first-time use
+   └─────────────┘
 ```
 
-[Demo video] · [Documentation](docs/) · [MiniMax-Week submission](docs/hackathon/minimax-week-2026.md)
+The runtime reads the router's web UI over HTTP, parses
+it into typed observations (the four knowledge states:
+`verified`, `absent`, `unsupported_or_unverified`, `unavailable`),
+and exposes those via `http://127.0.0.1:8484/v0/...`.
+The agent, called by the model, decides which observation
+to request next. The model reasons about the answer;
+the runtime enforces the evidence.
 
----
+## Honest defaults
+
+Gavetero does not invent. The runtime is read-only.
+The four-state vocabulary means:
+
+- `verified` — the runtime read the value from the router
+- `absent` — the firmware does not implement the capability
+- `unsupported_or_unverified` — Gavetero has no parser for it
+- `unavailable` — transport failure (timeout, refused, etc.)
+
+The default mode uses an embedded fixture (a sanitized
+capture of a TP-Link WR841N on firmware 3.15.9) so first-time
+users can try the CLI without hardware. With `--live --host X`
+it talks to a real router at X. The fixture is real data
+(sanitized at capture time); the live mode is real data
+(read at run time). Mock data is not invented.
 
 ## Install
 
-The user-facing install is one command. No sudo, no system
-packages, no dependencies.
+The user-facing install is one command. No sudo, no Go,
+no system packages:
 
 ```sh
-curl -sSf https://raw.githubusercontent.com/Quiarom/router-core/integration/gavetero/install.sh | sh
+curl -sSf https://raw.githubusercontent.com/Quiarom/router-core/gavetero-v0.1.0-alpha.1/install.sh | sh
 ```
 
-This downloads the latest prebuilt `gavetero` binary for your
-platform, installs it to `~/.local/bin/gavetero`, and creates
-a `gvt` symlink. The script never requires sudo and never
-modifies the system PATH; if `~/.local/bin` is not on your
-PATH, it prints the one line to add to your shell rc.
+This downloads the prebuilt single binary for your platform
+(linux/darwin × amd64/arm64), installs it to
+`~/.local/bin/gavetero` with a `gvt` symlink, and prints
+the PATH hint if needed.
 
-After install:
+For developers working in the repo:
 
 ```sh
-gvt version       # confirm the binary
-gvt setup         # store the GMI Cloud API key (one time)
-gvt doctor        # confirm the install
-gvt inspect       # see router observations (mock mode, no hardware)
-gvt ask "..."     # ask a question with MiniMax M3
+make install-user
 ```
 
-**For developers working in the repo:** use
-`make install-user` (requires Go 1.22+). The user-facing
-`install.sh` is for everyone else.
-
----
-
-## Quickstart
-
-Try it without hardware, in under a minute:
+## Quick start (real router)
 
 ```sh
-git clone https://github.com/Quiarom/router-core
-cd router-core
-go build -o ./bin/router-core ./cmd/router-core
-./bin/router-core probe --fixtures fixtures/synthetic/tplink-wr841n-v8
+# 1. One-time setup: store your GMI Cloud API key in the OS
+#    credential store. No plaintext config, no env vars required.
+gvt setup
+
+# 2. Confirm the install is healthy.
+gvt doctor
+#   ✓ CLI installation
+#   ✓ config location
+#   ✓ GMI key                  from OS credential store
+#   ✓ default gateway          192.168.1.1
+#   ✓ router observation
+#   ✓ adapter
+#   Result: 6 ok, 0 warn, 0 fail
+
+# 3. Identify any router on the network (real or unknown).
+gvt detect 192.168.1.1
+#   Gavetero Detect: 192.168.1.1
+#   ================
+#     reachability:  reachable
+#     family hint:   tplink-userrpm
+
+# 4. Read the live observations. Provide your router password
+#    via stdin (never via --password). Other vendors' default
+#    username can be set with --router-user.
+echo "$ROUTER_ADMIN_PASSWORD" | \
+  gvt inspect --live --host 192.168.1.1 --router-password-stdin
+
+# 5. Ask a question. The model (MiniMax M3 default, M2.7
+#    fallback) calls gvt inspect with different capabilities,
+#    then synthesises a Spanish answer with the four-state
+#    vocabulary and explicit evidence limits.
+gvt ask "¿Qué tan expuesta está mi red Wi-Fi?"
 ```
 
-You get the device identity, firmware fingerprint, and
-authentication state parsed from a sanitized fixture — no
-network, no router, no admin password.
-
-Then against a real TP-Link WR841N v8.4 (firmware 3.15.9):
+## Quick start (no router, first try)
 
 ```sh
-export GMI_SERVING_API_KEY="<jwt-key>"   # GMI Cloud Inference Engine
-./bin/router-core serve --host 192.168.1.1 --addr 127.0.0.1:8484 &
-./bin/router-core-agent \
-    --router-core-url http://127.0.0.1:8484 \
-    --question "Is my Wi-Fi exposed?" \
-    --model MiniMaxAI/MiniMax-M3
+# Without setup, gvt runs in mock mode using the embedded fixture
+# (a sanitized TP-Link WR841N capture). No GMI key required.
+gvt inspect
+#   Mode:  mock (fixture-backed, no network)
+#   Device: TL-WR841N/ND v8.4 on firmware 3.15.9
+#   ...
+
+gvt ask "Is my Wi-Fi exposed?" --dry-run
+#   Tools called: 3
+#     1. get_security /v0/security/dmz -> 404
+#     2. get_security /v0/security/forwarding -> 404
+#     3. get_security /v0/security/upnp -> 404
+#   Model: MiniMaxAI/MiniMax-M3
+#   Mode:  stub
 ```
 
-Or run the whole demo with one command:
+## Commands
 
-```sh
-./scripts/dev.sh --mock
+```text
+gvt version        # the build version
+gvt setup          # store the GMI Cloud API key (one time)
+gvt doctor         # 6 install checks, no network
+gvt inspect        # router observations (mock by default, --live to use a real router)
+gvt detect [host]  # identify a router on the network, family hint
+gvt ask <question> # run a question through MiniMax M3 (--dry-run for the stub)
+gvt integrations install <hermes|opencode|omp>
+                  # install the Gavetero skill for an agent runtime
 ```
 
----
+## The four-state vocabulary
 
-## What you get
+Every observation the runtime produces carries one of four
+states. The agent reasons about the answer based on this
+vocabulary; the user sees the same vocabulary in the output.
 
-- **Typed local API.** 9 endpoints on `127.0.0.1:8484` exposing
-  the router as JSON: device, status, clients, capabilities, and
-  per-capability security observations. See
-  [`docs/FRONTEND_CONTRACT.md`](docs/FRONTEND_CONTRACT.md).
-- **MiniMax reasoning layer.** An HTTP server on
-  `127.0.0.1:8585` that takes a question, calls the
-  appropriate tools, and returns a structured Spanish audit with
-  provenience and explicit evidence limits. See
-  [`docs/PHASE5_AGENT_RUN.md`](docs/PHASE5_AGENT_RUN.md).
-- **Honest capability states.** Each endpoint reports one of
-  `verified`, `absent`, `unsupported_or_unverified`, or
-  `unavailable`. The matrix is derived from a live probe, not a
-  hardcoded map. The frontend never has to guess what is real.
-- **Read-only by construction.** There is no `CapMutate` constant
-  in the type system. An architecture test
-  ([`internal/architecture_test.go`](internal/architecture_test.go))
-  fails the build if any `POST`/`PUT`/`DELETE` shows up in the
-  runtime. The agent's only POST goes to the LLM provider, never
-  to the router.
-- **Fixture replay.** Sanitized captures of the real lab unit
-  live in [`fixtures/captured/tplink-wr841n-v8/`](fixtures/captured/tplink-wr841n-v8/).
-  Every CI run is reproducible without hardware.
+| State | Meaning | Example |
+|---|---|---|
+| `verified` | runtime read the value | SSID: TP-LINK_CBEC16 |
+| `absent` | firmware does not implement | WPS on a router without WPS |
+| `unsupported_or_unverified` | Gavetero has no parser | the userRpm page on a non-TP-Link |
+| `unavailable` | transport failure | timeout connecting to the router |
 
----
+The mock mode uses the embedded fixture. Where the fixture
+parses a value, the state is `verified`. Where the firmware
+does not implement a capability, the state is `absent`. The
+agent does not invent `verified` for things the runtime
+could not read.
 
-## Supported hardware
+## Architecture
 
-| Router | Firmware | Verified |
-| --- | --- | --- |
-| TP-Link TL-WR841N/ND v8.4 | 3.15.9 Build 140724 Rel.63227n | ✅ 2026-09-04, GMI Cloud direct |
-| TP-Link TL-WR841N/ND v8.4 | 3.13.33 Build 130506 Rel.48660n | ✅ earlier capture, sanitized |
+The runtime is the only place that talks to the router. It
+is one binary with one parser per verified router family.
+Today: `tplinkwr841v8`. Adding a new family means writing
+a new `internal/adapters/<vendor>/` package, implementing
+the `domain.RouterAdapter` interface, and registering it.
+The agent discovers which adapter to use via the family hint
+that `gvt detect` reports.
 
-Other WR841N v8.x firmwares should work via the same Basic Auth
-recipe. Other vendors (ASUS, MikroTik, Ubiquiti) are not yet
-supported; the vendor-neutral `RouterAdapter` contract is ready
-for new adapters.
-
----
-
-## How it works
-
-```
-Operator
-  -> router-core-agent
-       |
-       | GET /v0/device, /v0/status, /v0/capabilities, /v0/clients
-       v
-     router-core serve (loopback :8484)
-       |
-       | GET /v0/security/<name>  (one tool call per turn)
-       v
-     TP-Link WR841N v8.4 firmware (192.168.1.1)
-
-  router-core-agent
-    |
-    | POST /v1/chat/completions (tool calls)
-    v
-  GMI Cloud Inference Engine
-  (api.gmi-serving.com, MiniMaxAI/MiniMax-M3 primary, M2.7 fallback)
-```
-
-The runtime is strictly read-only. The agent's only network call
-beyond the local router is to the LLM provider, with a real-time
-fallback: if M3 returns a transient error (5xx, timeout, network
-reset), the agent retries once with M2.7. OpenRouter is supported
-as a drop-in fallback via `--openrouter-url`.
-
----
+The agent is a thin orchestrator over the runtime. It uses
+`http.Client` against the runtime's `127.0.0.1:<port>` HTTP
+API. The model reasons; the runtime enforces the evidence.
 
 ## Safety
 
-- **GET only.** Every request to the router is a `GET`. The
-  agent's only POST is to the LLM provider. Architecture test
-  enforces this at the source level.
-- **Loopback or RFC1918 only.** Public IPs and DNS hostnames are
-  refused at every layer. The serve binds on `127.0.0.1`; the
-  agent refuses `--serve 0.0.0.0`.
-- **2 MiB response body cap.** Anything larger is truncated at
-  the transport.
+- **Read-only by construction.** The runtime never sends a
+  mutating request to the router. An architecture test
+  enforces no `POST`/`PUT`/`DELETE` in the runtime path
+  (`internal/architecture_test.go`).
+- **Loopback or RFC1918 only.** The runtime refuses to start
+  on a non-loopback address. The agent refuses to bind to
+  `0.0.0.0`.
+- **2 MiB response body cap.** Anything larger is truncated.
 - **No cross-host redirects.**
-- **In-memory session only.** The serve reads the admin
-  password from `/dev/tty` with echo disabled, holds it only for
-  the process lifetime, and zeros it on exit. The password lives
-  in `[]byte`; the runtime overwrites the bytes before releasing
-  the reference.
-- **Capabilities cannot be invented.** Each capability is
-  reported as one of `verified`, `absent`,
-  `unsupported_or_unverified`, `unavailable`. The frontend never
-  has to interpret; the matrix is honest.
-
----
-
-## Tested on real hardware
-
-TP-Link TL-WR841N/ND v8.4 — firmware 3.15.9 Build 140724
-Rel.63227n.
-
-The full evidence trail (auth recipe, capability matrix,
-end-to-end traces for both M3 and M2.7 against the live unit)
-is committed in
-[`docs/EVIDENCE_TRACE.md`](docs/EVIDENCE_TRACE.md) and
-[`fixtures/`](fixtures/).
-
----
-
-## Documentation
-
-- [Quickstart](docs/EVIDENCE_TRACE.md) — 5-minute setup with mock and
-  real router paths.
-- [Architecture](docs/STATUS.md) — three-layer design, the
-  safety boundary, how the adapter contract works.
-- [API reference](docs/FRONTEND_CONTRACT.md) — every endpoint, every state,
-  every status code.
-- [Agent](docs/PHASE5_AGENT_RUN.md) — how the reasoning layer calls the
-  runtime, tool definition, prompt structure.
-- [Adapter development](docs/adapters/tplink-wr841n.md) — how to
-  add a new vendor adapter.
-- [Evidence](docs/EVIDENCE_TRACE.md) — physical capture
-  trail, prior-art comparison, security recipe divergence.
-- [Demo](scripts/dev.sh) — reproducible end-to-end script (mock router, live agent).
-- [Architecture decision records](docs/adr/) — every AD the
-  project has committed to.
-- [MiniMax-Week submission](docs/hackathon/minimax-week-2026.md)
-  — judging context and submitted form.
-- [Archive](docs/archive/) — historical context: the original
-  Devin AI overnight pass, the Phase 5 design notes.
-
----
+- **Passwords are zeroed** before the runtime returns.
+  `--router-password-stdin` reads from stdin (never from argv);
+  the buffer is overwritten on return.
+- **The skill does not invent.** When the runtime reports
+  `unsupported_or_unverified`, the skill tells the model so.
+  When the runtime reports `unavailable`, the model retries
+  with a different observation or states that the evidence
+  is missing.
 
 ## Development
 
 ```sh
-# Build
-go build -o ./bin/router-core      ./cmd/router-core
-go build -o ./bin/router-core-agent ./cmd/router-core-agent
-go build -o ./bin/router-core-learn ./cmd/router-core-learn
-cd frontend && npm install && npm run build && cd ..
-
-# Test
-go test ./... -race                  # 9/9 Go packages
-cd frontend && npm test              # 11 frontend tests (5 contract + 6 integration)
-
-# Format
-gofmt -l .
+make build          # compile all binaries (gavetero + sidecars + learn)
+make test          # go test ./...
+make check         # gofmt + vet + go test -race + frontend tests
+make install-user  # install gvt + gavetero to ~/.local/bin
 ```
 
-The integration test runner lives at
-`frontend/tests/integration.test.mjs`. The end-to-end demo lives
-at `scripts/dev.sh --mock`.
+The CI runs 4 jobs: `go-test`, `frontend-test`, `user-journey`
+(boots gavetero in mock mode and exercises inspect/doctor/ask
+--dry-run), and `arch` (the architecture + secret-boundary
+invariants).
 
-## Contributing
+## License
 
-Please read [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) before
-opening an issue or pull request. Conventions: Conventional
-Commits, branch naming, PR rules, ADR-first for non-trivial
-design decisions.
+MIT.
 
-## License & acknowledgements
+## Acknowledgements
 
-MIT. See [`LICENSE`](LICENSE). Third-party attribution
-(including the original Devin AI overnight pass and prior art) in
-[`NOTICE`](NOTICE). The model integration is provided by
-[GMI Cloud](https://www.gmicloud.ai).
+Built on top of:
+- MiniMax M3 via GMI Cloud (https://www.gmicloud.ai)
+- Cobra (https://github.com/spf13/cobra)
+- The TP-Link WR841N and its userRpm family (which the runtime
+  understands natively, and which Gavetero's first verified
+  adapter wraps)
