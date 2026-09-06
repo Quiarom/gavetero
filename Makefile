@@ -1,17 +1,3 @@
-# Gavetero / router-core Makefile.
-#
-# The user-facing workflow targets `gavetero` (alias `gvt`) as the
-# only binary the user types. The transitional binaries
-# (router-core, router-core-agent) are EMBEDDED inside gavetero
-# at build time via go:embed, so the user only ever installs one
-# thing.
-#
-# Conventions:
-#   `make build`        compile the in-tree bin/ output
-#   `make install-user` install gvt + gavetero to ~/.local/bin
-#   `make test`         go test ./...
-#   `make check`        full deterministic check (gofmt + vet + test -race + frontend)
-#   `make demo`         scripts/dev.sh --mock (transitional, removed post-rename)
 GO ?= go
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 DIST ?= bin
@@ -23,17 +9,6 @@ SIDECAR_DIR = cmd/gavetero/cmd/sidecars
         frontend-install frontend-test frontend-build \
         dev dev-live clean
 
-# Build all binaries. The ORDER matters: the sidecar binaries
-# must be built and copied into the embed directory BEFORE
-# gavetero is compiled, because go:embed bakes the file contents
-# into the resulting binary at compile time.
-#
-# After `make build`:
-#   bin/gavetero              -- one binary, contains router-core + router-core-agent
-#   bin/gvt -> gavetero       -- alias for the shell
-#   bin/router-core           -- sidecar copy (also embedded; this is the Tauri-side copy)
-#   bin/router-core-agent     -- sidecar copy
-#   bin/router-core-learn     -- lab tool, kept for the engineering harness
 build:
 	@mkdir -p $(DIST)
 	@mkdir -p $(SIDECAR_DIR)
@@ -63,15 +38,20 @@ build:
 
 # Install the user-facing binary into ~/.local/bin.
 # Because gavetero now embeds the sidecars, only one file is
-# installed. The gvt symlink is for shell convenience.
-# Does not require sudo. Idempotent: re-running is a no-op.
+# required for normal use. The sidecars are also written next
+# to gavetero as a fallback for the live mode path.
 install-user: build
 	@mkdir -p $(BINDIR)
 	@install -m 0755 $(DIST)/gavetero $(BINDIR)/gavetero
+	@install -m 0755 $(DIST)/router-core $(BINDIR)/router-core
+	@install -m 0755 $(DIST)/router-core-agent $(BINDIR)/router-core-agent
 	@ln -sf gavetero $(BINDIR)/gvt
 	@echo ""
 	@echo "Installed in $(BINDIR):"
 	@echo "  gvt          -> gavetero (user-facing, single binary with embedded sidecars)"
+	@echo "  gavetero     (transitional: also used by gavetero sidecars)"
+	@echo "  router-core  (fallback for gvt inspect --live when embed fails)"
+	@echo "  router-core-agent (fallback for future gvt ask fallback path)"
 	@if echo "$$PATH" | tr ':' '\n' | grep -qx "$(BINDIR)"; then \
 		echo ""; \
 		echo "Try in a new shell:"; \
@@ -84,8 +64,8 @@ install-user: build
 	fi
 
 uninstall-user:
-	@rm -f $(BINDIR)/gavetero $(BINDIR)/gvt
-	@echo "Removed $(BINDIR)/gavetero and $(BINDIR)/gvt"
+	@rm -f $(BINDIR)/gavetero $(BINDIR)/gvt $(BINDIR)/router-core $(BINDIR)/router-core-agent
+	@echo "Removed gavetero, gvt, router-core, router-core-agent from $(BINDIR)"
 
 fmt:
 	gofmt -w .
@@ -96,7 +76,6 @@ vet:
 test:
 	$(GO) test ./...
 
-# Full deterministic check. No router. No GMI key. No network.
 check: fmt vet test frontend-test
 	@echo "check OK"
 
@@ -109,8 +88,6 @@ frontend-test:
 frontend-build:
 	cd frontend && npm run build
 
-# Engineering harness: the transitional binaries, used by the
-# Tauri desktop and by the CI golden trace. Not user-facing.
 dev:
 	./scripts/dev.sh --mock
 
