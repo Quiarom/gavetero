@@ -1,12 +1,15 @@
 // Package cmd: the inspect subcommand. It runs router-core
-// in mock mode, queries its HTTP API, and formats the result
+// as a sidecar and queries its HTTP API, formatting the result
 // for human or machine consumption.
 //
-// The inspect path is intentionally the simplest possible
-// user-facing workflow: it does not require an AI credential,
-// does not require a physical router, and does not spawn
-// router-core-agent. The user gets a deterministic view of
-// the current router observations.
+// The default mock mode uses the embedded fixture (TL-WR841N/ND
+// v8.4 on firmware 3.15.9) and does not touch the network.
+// With --live --host X, the sidecar talks to a real router at
+// X (default port 80). The same HTTP API exposes the router's
+// observations to gavetero inspect.
+//
+// The output uses the four-state vocabulary the API surface
+// uses: verified, absent, unsupported_or_unverified, unavailable.
 package cmd
 
 import (
@@ -19,50 +22,75 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-
-	"github.com/Quiarom/router-core/cmd/gavetero/cmd/sidecars"
-	"strings"
 	"time"
 
+	"github.com/Quiarom/router-core/cmd/gavetero/cmd/sidecars"
 	"github.com/spf13/cobra"
 )
 
+type inspectOptions struct {
+	Output              string
+	Live                bool
+	Host                string
+	RouterUser          string
+	RouterPasswordStdin bool
+}
+
 func newInspectCmd() *cobra.Command {
-	var output string
+	var (
+		output              string
+		live                bool
+		host                string
+		routerUser          string
+		routerPasswordStdin bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "inspect",
 		Short: "Show the current router observations",
-		Long: `Inspect the local router-core runtime and print the current
-observations. The runtime is started in mock mode (no network, no
-AI credential needed) for the duration of this command.
+		Long: `Run router-core as a sidecar and query its HTTP API.
 
-Output modes:
-  human   pretty table (default)
-  json    full JSON object to stdout
-  jsonl   one JSON object per line (future: events)`,
+By default, the sidecar runs in mock mode using the embedded
+fixture (TP-Link TL-WR841N/ND v8.4 on firmware 3.15.9). No
+network access required.
+
+With --live --host X, the sidecar talks to a real router at
+address X (default port 80). Use --router-user and
+--router-password-stdin to provide credentials (admin/admin
+is the default for TP-Link WR841N; other routers may differ).
+
+The output uses the four-state vocabulary the API surface
+uses: verified, absent, unsupported_or_unverified, unavailable.`,
 		Example: `  gvt inspect
+  gvt inspect --live --host 192.168.0.1
+  gvt inspect --live --host 192.168.0.1 --router-password-stdin
   gvt inspect --output json
   gvt inspect --output jsonl`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInspect(cmd.OutOrStdout(), cmd.ErrOrStderr(), output)
+			return runInspect(cmd.OutOrStdout(), cmd.ErrOrStderr(), inspectOptions{
+				Output:              output,
+				Live:                live,
+				Host:                host,
+				RouterUser:          routerUser,
+				RouterPasswordStdin: routerPasswordStdin,
+			})
 		},
 	}
 	cmd.Flags().StringVar(&output, "output", "human",
 		"output format: human, json, jsonl")
+	cmd.Flags().BoolVar(&live, "live", false,
+		"connect to a real router (default uses the embedded mock fixture)")
+	cmd.Flags().StringVar(&host, "host", "",
+		"router address for --live mode (e.g. 192.168.0.1)")
+	cmd.Flags().StringVar(&routerUser, "router-user", "admin",
+		"username for router admin login (used with --live)")
+	cmd.Flags().BoolVar(&routerPasswordStdin, "router-password-stdin", false,
+		"read the router admin password from stdin (used with --live)")
 	return cmd
 }
 
-func runInspect(stdout, stderr io.Writer, output string) error {
+func runInspect(stdout, stderr io.Writer, opts inspectOptions) error {
 	bin, err := findRouterCoreBin()
-	if err != nil {
-		return err
-	}
-
-	// Reserve a loopback IPv4 port explicitly. Using ":0" would
-	// bind on IPv6 dual-stack and the sidecar child may fail to
-	// reach it on systems where router-core only binds to IPv4.
-	addr, err := reserveLoopbackAddr()
 	if err != nil {
 		return err
 	}
@@ -70,7 +98,37 @@ func runInspect(stdout, stderr io.Writer, output string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	sidecar := exec.CommandContext(ctx, bin, "serve", "--mock", "--addr", addr)
+	// Decide the sidecar mode. Live mode: the sidecar binds to a
+	// loopback port and proxies to the real router at opts.Host.
+	// Mock mode (default): the sidecar uses the embedded fixture.
+	var sidecarArgs []string
+	var routerURL string
+	if opts.Live {
+		if opts.Host == "" {
+			return fmt.Errorf("--live requires --host X (router address)")
+		}
+		addr, lerr := reserveLoopbackAddr()
+		if lerr != nil {
+			return fmt.Errorf("reserve loopback port: %w", lerr)
+		}
+		sidecarArgs = []string{"serve", "--host", opts.Host, "--addr", addr}
+		if opts.RouterUser != "" {
+			sidecarArgs = append(sidecarArgs, "--username", opts.RouterUser)
+		}
+		if opts.RouterPasswordStdin {
+			sidecarArgs = append(sidecarArgs, "--password-stdin")
+		}
+		routerURL = "http://" + addr
+	} else {
+		addr, lerr := reserveLoopbackAddr()
+		if lerr != nil {
+			return fmt.Errorf("reserve loopback port: %w", lerr)
+		}
+		sidecarArgs = []string{"serve", "--mock", "--addr", addr}
+		routerURL = "http://" + addr
+	}
+
+	sidecar := exec.CommandContext(ctx, bin, sidecarArgs...)
 	sidecar.Stdout = io.Discard
 	sidecar.Stderr = stderr
 	if err := sidecar.Start(); err != nil {
@@ -83,130 +141,198 @@ func runInspect(stdout, stderr io.Writer, output string) error {
 		_ = sidecar.Wait()
 	}()
 
-	client := &http.Client{Timeout: 2 * time.Second}
-	base := "http://" + addr
-	if err := waitForReady(ctx, client, base+"/v0/capabilities"); err != nil {
-		return fmt.Errorf("router-core never became ready at %s: %w", addr, err)
+	// Wait for /v0/capabilities.
+	routerClient := &http.Client{Timeout: 2 * time.Second}
+	if err := waitForReady(ctx, routerClient, routerURL+"/v0/capabilities"); err != nil {
+		return fmt.Errorf("router-core never became ready at %s: %w", routerURL, err)
 	}
 
 	caps := map[string]string{}
-	if body, err := getJSON(ctx, client, base+"/v0/capabilities"); err == nil {
-		// The runtime wraps the map in {"capabilities": {...}}.
+	if body, err := getJSON(ctx, routerClient, routerURL+"/v0/capabilities"); err == nil {
 		var wrapper struct {
 			Capabilities map[string]string `json:"capabilities"`
 		}
-		if err := json.Unmarshal(body, &wrapper); err == nil {
-			caps = wrapper.Capabilities
-		}
+		_ = json.Unmarshal(body, &wrapper)
+		caps = wrapper.Capabilities
 	}
 	device := map[string]interface{}{}
-	if body, err := getJSON(ctx, client, base+"/v0/device"); err == nil {
+	if body, err := getJSON(ctx, routerClient, routerURL+"/v0/device"); err == nil {
 		_ = json.Unmarshal(body, &device)
 	}
 	status := map[string]interface{}{}
-	if body, err := getJSON(ctx, client, base+"/v0/status"); err == nil {
+	if body, err := getJSON(ctx, routerClient, routerURL+"/v0/status"); err == nil {
 		_ = json.Unmarshal(body, &status)
 	}
 	clients := []map[string]interface{}{}
-	if body, err := getJSON(ctx, client, base+"/v0/clients"); err == nil {
-		var c struct {
+	if body, err := getJSON(ctx, routerClient, routerURL+"/v0/clients"); err == nil {
+		var wrapper struct {
 			Clients []map[string]interface{} `json:"clients"`
 		}
-		_ = json.Unmarshal(body, &c)
-		clients = c.Clients
+		_ = json.Unmarshal(body, &wrapper)
+		clients = wrapper.Clients
 	}
 
-	switch output {
+	switch opts.Output {
 	case "json":
 		return writeJSON(stdout, map[string]any{
-			"router":       "fixture (mock mode)",
-			"mode":         "mock",
+			"router":       inspectSource(opts),
+			"mode":         inspectMode(opts),
 			"capabilities": caps,
 			"device":       device,
 			"status":       status,
 			"clients":      clients,
 		})
 	case "jsonl":
-		if err := writeJSONL(stdout, "device", device); err != nil {
-			return err
-		}
-		if err := writeJSONL(stdout, "status", status); err != nil {
-			return err
-		}
-		if err := writeJSONL(stdout, "clients", clients); err != nil {
-			return err
-		}
-		return writeJSONL(stdout, "capabilities", caps)
+		return renderAskJSONL(stdout, map[string]any{
+			"kind":     "inspect",
+			"source":   inspectSource(opts),
+			"mode":     inspectMode(opts),
+			"router":   device,
+			"status":   status,
+			"clients":  clients,
+			"caps":     caps,
+		})
 	default:
-		return renderHuman(stdout, caps, device, status, clients)
+		return renderInspectHuman(stdout, caps, device, status, clients, opts)
 	}
 }
 
-// findRouterCoreBin locates the router-core binary by looking at
-// (in order):
-//  1. ROUTER_CORE_BIN environment variable (CI, packaging)
-//  2. the same directory as the running gavetero executable
-//  3. $PATH
-//
-// After `make install-user` the router-core sidecar sits in the
-// same install dir as gavetero, so case 2 is the common path.
-// findRouterCoreBin locates the router-core sidecar. The sidecar
-// travels INSIDE the gavetero binary via go:embed (see
-// cmd/sidecars/embed.go). The user never has to install a separate
-// router-core binary; the installer only needs to drop a single
-// gavetero binary.
-//
-// This function prefers, in order:
-//  1. ROUTER_CORE_BIN env var (operator override)
-//  2. The embedded sidecar extracted to a temp dir at call time
-//  3. A router-core binary next to the running executable (legacy)
-//  4. $PATH (legacy)
-//
-// The temp dir extraction is the production path for the
-// user-facing install. The legacy paths exist so contributors
-// working in the repo can point at a locally-built sidecar
-// without rebuilding gavetero.
-func findRouterCoreBin() (string, error) {
-	if env := os.Getenv("ROUTER_CORE_BIN"); env != "" {
-		if _, err := os.Stat(env); err == nil {
-			return env, nil
-		}
+func inspectSource(opts inspectOptions) string {
+	if opts.Live {
+		return "live router at " + opts.Host
 	}
-	if path, err := extractEmbeddedSidecar("router-core"); err == nil {
-		return path, nil
-	}
-	if exe, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "router-core")
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			return candidate, nil
-		}
-	}
-	if path, err := exec.LookPath("router-core"); err == nil {
-		return path, nil
-	}
-	return "", fmt.Errorf(`router-core sidecar not found.
-
-Gavetero normally embeds router-core inside itself. If you see
-this error, the gavetero binary was built without the embed
-step. Run from the repo root:
-
-  make build
-  make install-user`)
+	return "fixture (mock mode)"
 }
 
-func reserveLoopbackAddr() (string, error) {
-	// Bind explicitly to 127.0.0.1:0 so the address is IPv4.
-	// The sidecar is launched with the resulting "127.0.0.1:<port>"
-	// string, and we want both the parent and the child to agree
-	// on the family. Without this, on dual-stack systems, the
-	// parent listener might be on [::]:port while the child
-	// connects to 127.0.0.1:port (a different socket).
-	ln, err := netListenLoopback("127.0.0.1:0")
-	if err != nil {
-		return "", err
+func inspectMode(opts inspectOptions) string {
+	if opts.Live {
+		return "live"
 	}
-	defer ln.Close()
-	return ln.Addr().String(), nil
+	return "mock"
+}
+
+func renderInspectHuman(stdout io.Writer, caps map[string]string, device, status map[string]interface{}, clients []map[string]interface{}, opts inspectOptions) error {
+	modeLabel := "mock (fixture-backed, no network)"
+	if opts.Live {
+		modeLabel = "live (router at " + opts.Host + ")"
+	}
+	fmt.Fprintln(stdout, "Gavetero Inspect")
+	fmt.Fprintln(stdout, "================")
+	fmt.Fprintln(stdout)
+	fmt.Fprintf(stdout, "Mode:  %s\n", modeLabel)
+	fmt.Fprintln(stdout)
+	if len(device) > 0 {
+		fmt.Fprintln(stdout, "Device")
+		fmt.Fprintln(stdout, "------")
+		for _, k := range []string{"vendor", "model", "hardwareVersion", "firmwareVersion", "managementAddress", "authenticated", "provenance"} {
+			if v, ok := device[k]; ok {
+				fmt.Fprintf(stdout, "  %-18s %v\n", k, v)
+			}
+		}
+		fmt.Fprintln(stdout)
+	}
+	if len(status) > 0 {
+		fmt.Fprintln(stdout, "Status")
+		fmt.Fprintln(stdout, "------")
+		for _, k := range []string{"reachable", "wanStatus", "uptimeSeconds", "provenance"} {
+			if v, ok := status[k]; ok {
+				fmt.Fprintf(stdout, "  %-18s %v\n", k, v)
+			}
+		}
+		fmt.Fprintln(stdout)
+	}
+	if len(caps) > 0 {
+		fmt.Fprintln(stdout, "Capabilities")
+		fmt.Fprintln(stdout, "------------")
+		order := []string{
+			"device", "status", "clients",
+			"wireless", "wireless_security",
+			"wps", "wps_state",
+			"dmz", "dmz_state",
+			"upnp", "upnp_state",
+			"remote_management",
+			"forwarding", "forwarding_rules",
+		}
+		seen := map[string]bool{}
+		for _, k := range order {
+			if v, ok := caps[k]; ok {
+				fmt.Fprintf(stdout, "  %-22s %s\n", k, v)
+				seen[k] = true
+			}
+		}
+		extras := []string{}
+		for k := range caps {
+			if !seen[k] {
+				extras = append(extras, k)
+			}
+		}
+		if len(extras) > 0 {
+			for _, k := range extras {
+				fmt.Fprintf(stdout, "  %-22s %s\n", k, caps[k])
+			}
+		}
+		fmt.Fprintln(stdout)
+	}
+	if clients != nil {
+		fmt.Fprintf(stdout, "Clients (%d observed)\n", len(clients))
+		fmt.Fprintln(stdout, "---------------------")
+		for _, c := range clients {
+			ip := toString(flattenMapValue(c, "ip"))
+			mac := toString(flattenMapValue(c, "mac"))
+			name := toString(flattenMapValue(c, "name"))
+			fmt.Fprintf(stdout, "  %-18s %-20s %s\n", ip, mac, name)
+		}
+		fmt.Fprintln(stdout)
+	}
+	fmt.Fprintln(stdout, "Legend:")
+	fmt.Fprintln(stdout, "  verified                     adapter read the value")
+	fmt.Fprintln(stdout, "  absent                       firmware does not implement")
+	fmt.Fprintln(stdout, "  unsupported_or_unverified    runtime has no parser")
+	fmt.Fprintln(stdout, "  unavailable                  transport failure")
+	return nil
+}
+
+// flattenMapValue returns the inner string of an Untrusted
+// (or any) map, or the empty string if absent.
+func flattenMapValue(m map[string]interface{}, key string) interface{} {
+	if m == nil {
+		return nil
+	}
+	if v, ok := m[key]; ok {
+		return flattenValueInspect(v)
+	}
+	return nil
+}
+
+func flattenValueInspect(v interface{}) interface{} {
+	if v == nil {
+		return ""
+	}
+	switch x := v.(type) {
+	case map[string]interface{}:
+		if val, ok := x["value"]; ok {
+			if trust, ok2 := x["trust"].(string); ok2 && trust == "untrusted" {
+				s := toString(val)
+				if s == "" {
+					return "(empty)"
+				}
+				return "~ " + s
+			}
+			return val
+		}
+		return x
+	}
+	return v
+}
+
+func toString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
 }
 
 func waitForReady(ctx context.Context, client *http.Client, url string) error {
@@ -243,6 +369,45 @@ func getJSON(ctx context.Context, client *http.Client, url string) ([]byte, erro
 	return io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 }
 
+func findRouterCoreBin() (string, error) {
+	// Prefer the embedded sidecar (extracted from the gavetero
+	// binary itself). Falls back to the legacy disk search.
+	if path, err := sidecars.Get("router-core"); err == nil {
+		return path, nil
+	}
+	if env := os.Getenv("ROUTER_CORE_BIN"); env != "" {
+		if _, err := os.Stat(env); err == nil {
+			return env, nil
+		}
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "router-core")
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, nil
+		}
+	}
+	if path, err := exec.LookPath("router-core"); err == nil {
+		return path, nil
+	}
+	return "", fmt.Errorf(`router-core sidecar not found.
+
+Gavetero normally embeds router-core inside itself. If you see
+this error, the gavetero binary was built without the embed
+step. Run from the repo root:
+
+  make build
+  make install-user`)
+}
+
+func reserveLoopbackAddr() (string, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", err
+	}
+	defer ln.Close()
+	return ln.Addr().String(), nil
+}
+
 func writeJSON(w io.Writer, v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -251,215 +416,3 @@ func writeJSON(w io.Writer, v any) error {
 	_, err = fmt.Fprintln(w, string(b))
 	return err
 }
-
-func writeJSONL(w io.Writer, kind string, v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(w, "{\"kind\":%q,\"data\":%s}\n", kind, string(b))
-	return err
-}
-
-func renderHuman(w io.Writer, caps map[string]string, device, status map[string]interface{}, clients []map[string]interface{}) error {
-	// Flatten untrusted values: an Untrusted JSON object looks
-	// like {"source": "...", "trust": "untrusted", "value": "..."}.
-	// The user-facing rendering shows just the value, with a
-	// small marker when the value was untrusted.
-	device = flattenMap(device)
-	status = flattenMap(status)
-
-	fmt.Fprintln(w, "Gavetero Inspect")
-	fmt.Fprintln(w, "================")
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Mode:  mock (fixture-backed, no network)")
-	fmt.Fprintln(w)
-	if len(device) > 0 {
-		fmt.Fprintln(w, "Device")
-		fmt.Fprintln(w, "------")
-		for _, k := range []string{"vendor", "model", "hardwareVersion", "firmwareVersion", "managementAddress", "authenticated", "provenance"} {
-			if v, ok := device[k]; ok {
-				fmt.Fprintf(w, "  %-18s %v\n", k, v)
-			}
-		}
-		fmt.Fprintln(w)
-	}
-	if len(status) > 0 {
-		fmt.Fprintln(w, "Status")
-		fmt.Fprintln(w, "------")
-		for _, k := range []string{"reachable", "wanStatus", "uptimeSeconds", "provenance"} {
-			if v, ok := status[k]; ok {
-				fmt.Fprintf(w, "  %-18s %v\n", k, v)
-			}
-		}
-		fmt.Fprintln(w)
-	}
-	if len(caps) > 0 {
-		fmt.Fprintln(w, "Capabilities")
-		fmt.Fprintln(w, "------------")
-		order := []string{
-			"device", "status", "clients",
-			"wireless", "wireless_security",
-			"wps", "wps_state",
-			"dmz", "dmz_state",
-			"upnp", "upnp_state",
-			"remote_management",
-			"forwarding", "forwarding_rules",
-		}
-		seen := map[string]bool{}
-		for _, k := range order {
-			if v, ok := caps[k]; ok {
-				fmt.Fprintf(w, "  %-22s %s\n", k, v)
-				seen[k] = true
-			}
-		}
-		// Any extras that the runtime returned.
-		extras := []string{}
-		for k := range caps {
-			if !seen[k] {
-				extras = append(extras, k)
-			}
-		}
-		if len(extras) > 0 {
-			for _, k := range extras {
-				fmt.Fprintf(w, "  %-22s %s\n", k, caps[k])
-			}
-		}
-		fmt.Fprintln(w)
-	}
-	if clients != nil {
-		fmt.Fprintf(w, "Clients (%d observed)\n", len(clients))
-		fmt.Fprintln(w, "---------------------")
-		for _, c := range clients {
-			flat := flattenMap(c)
-			ip := toString(flat["ip"])
-			mac := toString(flat["mac"])
-			name := toString(flat["name"])
-			fmt.Fprintf(w, "  %-18s %-20s %s\n", ip, mac, name)
-		}
-		fmt.Fprintln(w)
-	}
-	fmt.Fprintln(w, "Legend:")
-	fmt.Fprintln(w, "  verified                     adapter read the value")
-	fmt.Fprintln(w, "  absent                       firmware does not implement")
-	fmt.Fprintln(w, "  unsupported_or_unverified    runtime has no parser")
-	fmt.Fprintln(w, "  unavailable                  transport failure")
-	return nil
-}
-
-// flattenMap returns m with every Untrusted-shaped value
-// replaced by its inner string. The shape of an Untrusted JSON
-// object is {"source": "...", "trust": "untrusted", "value": "..."}.
-// When the value field is present we keep just the value; when
-// the trust field is "untrusted" we prefix the rendered line
-// with "~ " to mark it as router-supplied data.
-func flattenMap(m map[string]interface{}) map[string]interface{} {
-	out := make(map[string]interface{}, len(m))
-	for k, v := range m {
-		out[k] = flattenValue(v)
-	}
-	return out
-}
-
-func flattenValue(v interface{}) interface{} {
-	if v == nil {
-		return ""
-	}
-	switch x := v.(type) {
-	case map[string]interface{}:
-		// Untrusted object: {value, trust, source}. Extract the
-		// inner value, marking it as untrusted data when applicable.
-		if val, ok := x["value"]; ok {
-			if trust, ok2 := x["trust"].(string); ok2 && trust == "untrusted" {
-				s := toString(val)
-				if s == "" {
-					return "(empty)"
-				}
-				return "~ " + s
-			}
-			return val
-		}
-		return x
-	case []interface{}:
-		out := make([]interface{}, len(x))
-		for i, item := range x {
-			out[i] = flattenValue(item)
-		}
-		return out
-	default:
-		return v
-	}
-}
-
-func toString(v interface{}) string {
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
-}
-
-// avoid unused import
-var _ = strings.TrimSpace
-
-// netListenLoopback is a package-level seam for tests. The
-// net.go / net_windows.go files rebind it via init().
-var netListenLoopback = func(addr string) (net.Listener, error) {
-	return nil, fmt.Errorf("netListenLoopback not bound (build tag issue?)")
-}
-
-// findRouterCoreAgentBin locates the router-core-agent binary,
-// following the same precedence as findRouterCoreBin:
-//  1. ROUTER_CORE_AGENT_BIN env var
-//  2. same directory as the running executable
-//  3. $PATH
-func findRouterCoreAgentBin() (string, error) {
-	if env := os.Getenv("ROUTER_CORE_AGENT_BIN"); env != "" {
-		if _, err := os.Stat(env); err == nil {
-			return env, nil
-		}
-	}
-	if exe, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "router-core-agent")
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			return candidate, nil
-		}
-	}
-	if path, err := exec.LookPath("router-core-agent"); err == nil {
-		return path, nil
-	}
-	return "", fmt.Errorf(`router-core-agent binary not found.
-
-gavetero ask spawns router-core-agent as the reasoning sidecar.
-Build it once with:
-
-  make build
-
-and either keep both binaries in the same directory, or set:
-
-  export ROUTER_CORE_AGENT_BIN=/path/to/router-core-agent`)
-}
-
-// extractEmbeddedSidecar returns the absolute path to the
-// named embedded sidecar binary. The first call extracts
-// both sidecars to a temp directory; subsequent calls return
-// the cached paths.
-//
-// If the embed is empty (e.g. when the source tree was built
-// without running `make build` first), this returns an error
-// so the caller can fall back to the disk lookup.
-func extractEmbeddedSidecar(name string) (string, error) {
-	return sidecars.Get(name)
-}
-
-// extractEmbeddedSidecar returns the absolute path to the
-// named embedded sidecar binary. The first call extracts
-// both sidecars to a temp directory; subsequent calls reuse
-// the cached paths. The extraction is per-process; the temp
-// dir is cleaned up at process exit.
-//
-// If the embed is empty (e.g. when the source tree was built
-// without running `make build` first), this returns an error
-// so the caller can fall back to the disk lookup.

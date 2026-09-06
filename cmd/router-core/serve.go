@@ -94,6 +94,7 @@ func runServeCommand(args []string) error {
 	mock := fs.Bool("mock", false, "run against a fixture-backed adapter (no network)")
 	mockPath := fs.String("mock-fixture", "", "path to a synthetic fixture (default: fixtures/synthetic/tplink-wr841n-v8)")
 	passwordStdin := fs.Bool("password-stdin", false, "read the admin password from stdin (refuses if stdin is a TTY)")
+	username := fs.String("username", "admin", "admin username for the router login")
 	if err := fs.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) || err == flag.ErrHelp {
 			return nil
@@ -134,7 +135,7 @@ func runServeCommand(args []string) error {
 		adapter := tplinkwr841v8.New(*host, transport.WithTimeout(*timeout))
 		loginCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := adapter.Login(loginCtx, "admin", string(password)); err != nil {
+		if err := adapter.Login(loginCtx, *username, string(password)); err != nil {
 			return fmt.Errorf("login: %w", err)
 		}
 
