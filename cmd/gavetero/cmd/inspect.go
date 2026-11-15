@@ -16,16 +16,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/Quiarom/router-core/cmd/gavetero/cmd/sidecars"
+	"github.com/spf13/cobra"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
-
-	"github.com/Quiarom/router-core/cmd/gavetero/cmd/sidecars"
-	"github.com/spf13/cobra"
 )
 
 type inspectOptions struct {
@@ -131,6 +131,16 @@ func runInspect(stdout, stderr io.Writer, opts inspectOptions) error {
 	sidecar := exec.CommandContext(ctx, bin, sidecarArgs...)
 	sidecar.Stdout = io.Discard
 	sidecar.Stderr = stderr
+	if opts.RouterPasswordStdin {
+		// Read the password from stdin before starting the sidecar
+		// so cobra does not consume the input first. We then
+		// pass it to the child through a pipe.
+		pw, perr := readPassword()
+		if perr != nil {
+			return fmt.Errorf("read router password: %w", perr)
+		}
+		sidecar.Stdin = strings.NewReader(pw + "\n")
+	}
 	if err := sidecar.Start(); err != nil {
 		return fmt.Errorf("start router-core: %w", err)
 	}
@@ -184,13 +194,13 @@ func runInspect(stdout, stderr io.Writer, opts inspectOptions) error {
 		})
 	case "jsonl":
 		return renderAskJSONL(stdout, map[string]any{
-			"kind":     "inspect",
-			"source":   inspectSource(opts),
-			"mode":     inspectMode(opts),
-			"router":   device,
-			"status":   status,
-			"clients":  clients,
-			"caps":     caps,
+			"kind":    "inspect",
+			"source":  inspectSource(opts),
+			"mode":    inspectMode(opts),
+			"router":  device,
+			"status":  status,
+			"clients": clients,
+			"caps":    caps,
 		})
 	default:
 		return renderInspectHuman(stdout, caps, device, status, clients, opts)
@@ -415,4 +425,14 @@ func writeJSON(w io.Writer, v any) error {
 	}
 	_, err = fmt.Fprintln(w, string(b))
 	return err
+}
+
+// readPassword reads a single line from stdin. Used by --router-password-stdin.
+func readPassword() (string, error) {
+	buf, err := io.ReadAll(io.LimitReader(os.Stdin, 1<<16))
+	if err != nil {
+		return "", err
+	}
+	s := strings.TrimRight(string(buf), "\r\n")
+	return s, nil
 }

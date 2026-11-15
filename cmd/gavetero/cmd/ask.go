@@ -8,7 +8,6 @@
 // second sidecar, captures the answer, and prints it.
 //
 // The user does not see:
-//
 //   - which ports the sidecars bind to
 //   - the router-core-url the agent connects to
 //   - the model identifier (default MiniMaxAI/MiniMax-M3)
@@ -26,9 +25,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/Quiarom/router-core/cmd/gavetero/cmd/sidecars"
 	"github.com/spf13/cobra"
 )
 
@@ -40,15 +41,18 @@ const (
 
 func newAskCmd() *cobra.Command {
 	var (
-		output        string
-		dryRun        bool
-		mockMode      bool
-		noFallback    bool
-		model         string
-		fallbackModel string
-		timeoutSec    int
-		verboseAgent  bool
-		noMock        bool
+		output              string
+		dryRun              bool
+		mockMode            bool
+		noFallback          bool
+		model               string
+		fallbackModel       string
+		timeoutSec          int
+		verboseAgent        bool
+		live                bool
+		host                string
+		routerUser          string
+		routerPasswordStdin bool
 	)
 
 	cmd := &cobra.Command{
@@ -59,10 +63,14 @@ the answer. The local runtime (router-core) is started
 automatically in mock mode (no network, no physical router
 required) for the duration of this command.
 
+With --live --host X, the runtime talks to a real router at
+X. The same HTTP API exposes the router's observations to
+gavetero ask.
+
 Output modes:
 
   human   the answer and a short summary of the tool calls
-  json    the full JSON returned by the agent
+  json    the full JSON object returned by the agent
   jsonl   one event per line: tool_call, observation, completed
 
 The default model is MiniMaxAI/MiniMax-M3, served by GMI
@@ -82,15 +90,19 @@ Resolution order for the API key (GMI):
 		RunE: func(cmd *cobra.Command, args []string) error {
 			question := strings.Join(args, " ")
 			opts := askOptions{
-				Question:      question,
-				Output:        output,
-				DryRun:        dryRun,
-				MockMode:      mockMode && !noMock,
-				NoFallback:    noFallback,
-				Model:         model,
-				FallbackModel: fallbackModel,
-				Timeout:       time.Duration(timeoutSec) * time.Second,
-				VerboseAgent:  verboseAgent,
+				Question:            question,
+				Output:              output,
+				DryRun:              dryRun,
+				MockMode:            mockMode,
+				NoFallback:          noFallback,
+				Model:               model,
+				FallbackModel:       fallbackModel,
+				Timeout:             time.Duration(timeoutSec) * time.Second,
+				VerboseAgent:        verboseAgent,
+				Live:                live,
+				Host:                host,
+				RouterUser:          routerUser,
+				RouterPasswordStdin: routerPasswordStdin,
 			}
 			return runAsk(cmd.OutOrStdout(), cmd.ErrOrStderr(), opts)
 		},
@@ -101,12 +113,18 @@ Resolution order for the API key (GMI):
 		"use the deterministic offline agent (does not call GMI)")
 	cmd.Flags().BoolVar(&mockMode, "mock", true,
 		"start router-core in mock mode (default)")
-	cmd.Flags().BoolVar(&noMock, "no-mock", false,
-		"talk to a real router instead of the mock fixture")
 	cmd.Flags().BoolVar(&noFallback, "no-fallback", false,
 		"disable the M2.7 fallback; fail on the primary model only")
 	cmd.Flags().StringVar(&model, "model", defaultModel,
 		"primary model identifier")
+	cmd.Flags().BoolVar(&live, "live", false,
+		"connect to a real router (default uses the embedded mock fixture)")
+	cmd.Flags().StringVar(&host, "host", "",
+		"router address for --live mode (e.g. 192.168.0.1)")
+	cmd.Flags().StringVar(&routerUser, "router-user", "admin",
+		"username for router admin login (used with --live)")
+	cmd.Flags().BoolVar(&routerPasswordStdin, "router-password-stdin", false,
+		"read the router admin password from stdin (used with --live)")
 	cmd.Flags().StringVar(&fallbackModel, "fallback-model", defaultFallbackModel,
 		"fallback model identifier (used when primary fails with a transient error)")
 	cmd.Flags().IntVar(&timeoutSec, "timeout", defaultTimeoutSec,
@@ -117,18 +135,29 @@ Resolution order for the API key (GMI):
 }
 
 type askOptions struct {
-	Question      string
-	Output        string
-	DryRun        bool
-	MockMode      bool
-	NoFallback    bool
-	Model         string
-	FallbackModel string
-	Timeout       time.Duration
-	VerboseAgent  bool
+	Question            string
+	Output              string
+	DryRun              bool
+	MockMode            bool
+	NoFallback          bool
+	Model               string
+	FallbackModel       string
+	Timeout             time.Duration
+	VerboseAgent        bool
+	Live                bool
+	Host                string
+	RouterUser          string
+	RouterPasswordStdin bool
 }
 
 func runAsk(stdout, stderr io.Writer, opts askOptions) error {
+	if opts.Live && opts.Host == "" {
+		return fmt.Errorf("--live requires --host X (router address)")
+	}
+	if !opts.Live && !opts.MockMode {
+		return fmt.Errorf("--mock=false requires --live --host X")
+	}
+
 	// 1. Resolve the API key. Precedence: env > keyring > error.
 	apiKey, err := resolveAPIKey()
 	if err != nil && !opts.DryRun {
@@ -159,15 +188,20 @@ func runAsk(stdout, stderr io.Writer, opts askOptions) error {
 	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
 	defer cancel()
 
-	routerCmd := exec.CommandContext(ctx, routerBin, "serve")
-	routerCmd.Args = append(routerCmd.Args, buildRouterServeArgs(opts, routerAddr)...)
+	routerCmd := exec.CommandContext(ctx, routerBin, buildRouterServeArgs(opts, routerAddr)...)
 	if opts.VerboseAgent {
 		routerCmd.Stderr = stderr
 	} else {
 		routerCmd.Stderr = io.Discard
 	}
-	routerCmd.Stderr = stderr // surface any startup error
 	routerCmd.Stdout = io.Discard
+	if opts.RouterPasswordStdin {
+		pw, perr := readPassword()
+		if perr != nil {
+			return fmt.Errorf("read router password: %w", perr)
+		}
+		routerCmd.Stdin = strings.NewReader(pw + "\n")
+	}
 	if err := routerCmd.Start(); err != nil {
 		return fmt.Errorf("start router-core: %w", err)
 	}
@@ -186,8 +220,7 @@ func runAsk(stdout, stderr io.Writer, opts askOptions) error {
 	}
 
 	// 5. Start the router-core-agent sidecar.
-	agentCmd := exec.CommandContext(ctx, agentBin)
-	agentCmd.Args = append(agentCmd.Args, buildAgentServeArgs(opts, agentAddr, routerURL)...)
+	agentCmd := exec.CommandContext(ctx, agentBin, buildAgentServeArgs(opts, agentAddr, routerURL)...)
 	if opts.VerboseAgent {
 		agentCmd.Stderr = stderr
 	} else {
@@ -244,36 +277,6 @@ func runAsk(stdout, stderr io.Writer, opts askOptions) error {
 	return renderAsk(stdout, opts, result, body)
 }
 
-func buildRouterServeArgs(opts askOptions, addr string) []string {
-	args := []string{
-		"serve",
-		"--addr", addr,
-	}
-	if opts.MockMode {
-		args = append(args, "--mock")
-	}
-	return args
-}
-
-func buildAgentServeArgs(opts askOptions, addr, routerURL string) []string {
-	args := []string{
-		"--serve", addr,
-		"--router-core-url", routerURL,
-		"--question", opts.Question,
-		"--model", opts.Model,
-		"--timeout", fmt.Sprintf("%ds", int(opts.Timeout.Seconds())),
-	}
-	if opts.DryRun {
-		args = append(args, "--dry-run")
-	}
-	if opts.NoFallback {
-		args = append(args, "--model-fallback", "")
-	} else {
-		args = append(args, "--model-fallback", opts.FallbackModel)
-	}
-	return args
-}
-
 func renderAsk(stdout io.Writer, opts askOptions, result map[string]any, raw []byte) error {
 	switch opts.Output {
 	case "json":
@@ -282,11 +285,11 @@ func renderAsk(stdout io.Writer, opts askOptions, result map[string]any, raw []b
 	case "jsonl":
 		return renderAskJSONL(stdout, result)
 	default:
-		return renderAskHuman(stdout, result)
+		return renderAskHuman(stdout, result, opts)
 	}
 }
 
-func renderAskHuman(stdout io.Writer, result map[string]any) error {
+func renderAskHuman(stdout io.Writer, result map[string]any, opts askOptions) error {
 	answer, _ := result["answer"].(string)
 	model, _ := result["model"].(string)
 	mode, _ := result["mode"].(string)
@@ -320,53 +323,6 @@ func renderAskHuman(stdout io.Writer, result map[string]any) error {
 	return nil
 }
 
-func renderAskJSONL(stdout io.Writer, result map[string]any) error {
-	// One event per line. The agent in the integration branch
-	// emits Events alongside Steps. The current response
-	// includes steps[] but not events[] (the model-driven path
-	// uses the stub agent when --dry-run is set, which has
-	// neither). We derive events from steps to keep the jsonl
-	// contract consistent.
-	enc := json.NewEncoder(stdout)
-	enc.SetEscapeHTML(false)
-
-	if steps, ok := result["steps"].([]any); ok {
-		for i, s := range steps {
-			step, _ := s.(map[string]any)
-			if step == nil {
-				continue
-			}
-			tool, _ := step["tool"].(string)
-			path, _ := step["path"].(string)
-			status, _ := step["http_status"].(float64)
-			if tool != "" {
-				_ = enc.Encode(map[string]any{
-					"kind":  "tool_call",
-					"tool":  tool,
-					"path":  path,
-					"index": i + 1,
-				})
-			}
-			if tool != "" {
-				_ = enc.Encode(map[string]any{
-					"kind":        "observation",
-					"tool":        tool,
-					"path":        path,
-					"http_status": int(status),
-					"index":       i + 1,
-				})
-			}
-		}
-	}
-	if answer, _ := result["answer"].(string); answer != "" {
-		_ = enc.Encode(map[string]any{
-			"kind":   "completed",
-			"answer": answer,
-		})
-	}
-	return nil
-}
-
 func resolveAPIKey() (string, error) {
 	if env := os.Getenv("GMI_SERVING_API_KEY"); env != "" {
 		return env, nil
@@ -379,4 +335,88 @@ func resolveAPIKey() (string, error) {
 			"  - export GMI_SERVING_API_KEY=YOUR_KEY\n" +
 			"  - or run `gvt setup` to store the key in the OS credential store",
 	)
+}
+
+// findRouterCoreAgentBin locates the router-core-agent binary.
+// The router-core-agent binary is a flag-driven single command
+// (no subcommands). It accepts --router-core-url, --model,
+// --question, etc. as flags, and prints the answer to stdout.
+func findRouterCoreAgentBin() (string, error) {
+	if path, err := sidecars.Get("router-core-agent"); err == nil {
+		return path, nil
+	}
+	if env := os.Getenv("ROUTER_CORE_AGENT_BIN"); env != "" {
+		if _, err := os.Stat(env); err == nil {
+			return env, nil
+		}
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "router-core-agent")
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, nil
+		}
+	}
+	if path, err := exec.LookPath("router-core-agent"); err == nil {
+		return path, nil
+	}
+	return "", fmt.Errorf(`router-core-agent sidecar not found.
+
+Gavetero normally embeds router-core-agent inside itself. If
+you see this error, the gavetero binary was built without the
+embed step. Run from the repo root:
+
+  make build
+  make install-user`)
+}
+
+// buildRouterServeArgs returns the argv slice for the
+// router-core sidecar (in mock mode by default, or with
+// --host X for the live mode that talks to a real router).
+func buildRouterServeArgs(opts askOptions, addr string) []string {
+	args := []string{"serve", "--addr", addr, "--timeout-ms", fmt.Sprintf("%d", int(opts.Timeout.Seconds()*1000))}
+	if !opts.Live {
+		return append(args, "--mock")
+	}
+	args = append(args, "--host", opts.Host)
+	if opts.RouterUser != "" {
+		args = append(args, "--username", opts.RouterUser)
+	}
+	if opts.RouterPasswordStdin {
+		args = append(args, "--password-stdin")
+	}
+	return args
+}
+
+// buildAgentServeArgs returns the argv slice for the
+// router-core-agent sidecar. router-core-agent is a flag-driven
+// binary (no subcommand); all options are passed as flags.
+func buildAgentServeArgs(opts askOptions, addr, routerURL string) []string {
+	args := []string{
+		"--router-core-url", routerURL,
+		"--serve", addr,
+		"--question", opts.Question,
+		"--model", opts.Model,
+		"--timeout", fmt.Sprintf("%ds", int(opts.Timeout.Seconds())),
+	}
+	if opts.DryRun {
+		args = append(args, "--dry-run")
+	}
+	if opts.NoFallback {
+		args = append(args, "--model-fallback", "")
+	} else {
+		args = append(args, "--model-fallback", opts.FallbackModel)
+	}
+	return args
+}
+
+// renderAskJSONL is the shared JSONL renderer used by both
+// `gvt ask` and `gvt inspect --output jsonl`. Each observation
+// is a single line with kind+data.
+func renderAskJSONL(w io.Writer, result map[string]any) error {
+	b, err := json.Marshal(result)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(w, string(b))
+	return err
 }

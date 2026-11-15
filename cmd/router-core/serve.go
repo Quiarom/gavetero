@@ -132,12 +132,13 @@ func runServeCommand(args []string) error {
 		store := &sessionStore{password: append([]byte(nil), password...)}
 		defer zeroBytes(&store.password)
 
-		adapter := tplinkwr841v8.New(*host, transport.WithTimeout(*timeout))
+		liveAdapter := tplinkwr841v8.New(*host, transport.WithTimeout(*timeout))
 		loginCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := adapter.Login(loginCtx, *username, string(password)); err != nil {
+		if err := liveAdapter.Login(loginCtx, *username, string(password)); err != nil {
 			return fmt.Errorf("login: %w", err)
 		}
+		adapter = liveAdapter
 
 		fmt.Fprintf(os.Stderr, "router-core serve: authenticated, listening on %s\n", *addr)
 	}

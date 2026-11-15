@@ -24,3 +24,7 @@ secrets.*
 /cmd/gavetero/cmd/sidecars/router-core
 /cmd/gavetero/cmd/sidecars/router-core-agent
 
+
+.atl/
+.serena/
+/gavetero

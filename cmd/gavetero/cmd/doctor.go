@@ -19,10 +19,10 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
-	"time"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/zalando/go-keyring"
@@ -223,27 +223,59 @@ func checkAdapter() checkResult {
 }
 
 func defaultGateway() (string, error) {
-	// Use a UDP "dial" trick: opening a UDP connection to a
-	// remote address does not send packets but does select the
-	// default route. Then ask for the local address.
-	conn, err := net.DialTimeout("udp", "1.1.1.1:80", 2*time.Second)
+	gw, err := defaultGatewayFromProcRoute("/proc/net/route")
 	if err != nil {
 		return "", err
 	}
-	defer conn.Close()
-	local, ok := conn.LocalAddr().(*net.UDPAddr)
-	if !ok {
-		return "", fmt.Errorf("unexpected LocalAddr type")
+	return gw + " (use --host to override)", nil
+}
+
+// defaultGatewayFromProcRoute reads the Linux kernel routing table
+// directly (no subprocess, no packets) and returns the gateway of
+// the default route with the lowest metric. path is a parameter so
+// tests can feed a fixture table instead of the live one.
+func defaultGatewayFromProcRoute(path string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read route table: %w", err)
 	}
-	// Walk the routing table to find the gateway for this
-	// interface; net.Dial does not return it. As a fallback,
-	// we report the local IP and instruct the user to confirm
-	// the gateway. (This keeps the doctor command non-
-	// destructive and free of subprocess calls to `ip route`.)
-	if local.IP.IsUnspecified() {
-		return "0.0.0.0", nil
+	bestMetric := 0
+	best := ""
+	for i, line := range strings.Split(string(raw), "\n") {
+		if i == 0 || strings.TrimSpace(line) == "" {
+			continue // header / trailing blank
+		}
+		f := strings.Fields(line)
+		if len(f) < 8 || f[1] != "00000000" {
+			continue // not a default route
+		}
+		flags, err := strconv.ParseUint(f[3], 16, 32)
+		if err != nil || flags&0x2 == 0 || f[2] == "00000000" {
+			continue // down, or gateway-less (link scope)
+		}
+		metric := 0
+		if m, err := strconv.Atoi(f[6]); err == nil {
+			metric = m
+		}
+		if best == "" || metric < bestMetric {
+			bestMetric = metric
+			best = f[2]
+		}
 	}
-	return local.IP.String() + " (use --host to override)", nil
+	if best == "" {
+		return "", fmt.Errorf("no default route with gateway in %s", path)
+	}
+	return procRouteAddr(best)
+}
+
+// procRouteAddr converts the little-endian hex address used by
+// /proc/net/route (e.g. 0101A8C0) to dotted quad (192.168.1.1).
+func procRouteAddr(hexAddr string) (string, error) {
+	v, err := strconv.ParseUint(hexAddr, 16, 32)
+	if err != nil {
+		return "", fmt.Errorf("bad gateway address %q: %w", hexAddr, err)
+	}
+	return fmt.Sprintf("%d.%d.%d.%d", byte(v), byte(v>>8), byte(v>>16), byte(v>>24)), nil
 }
 
 // execCmd is a tiny shim that lets the doctor command run a
