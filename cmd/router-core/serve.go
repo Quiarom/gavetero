@@ -416,12 +416,22 @@ func wirelessReader(adapter domain.RouterAdapter) observationReader {
 
 func capabilitiesReader(readers map[string]observationReader) observationReader {
 	return func(ctx context.Context) domain.Observation[any] {
+		names := [...]string{"device", "status", "clients", "wireless", "wps", "dmz", "upnp", "remote-management", "forwarding"}
+		var results [len(names)]domain.Observation[any]
+		var probes sync.WaitGroup
+		for i, name := range names {
+			probes.Go(func() {
+				probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				defer cancel()
+				results[i] = readers[name](probeCtx)
+			})
+		}
+		probes.Wait()
+
 		matrix := make(map[string]domain.ObservationState, len(readers))
 		source := domain.ProvenanceAbsent
-		for _, name := range []string{"device", "status", "clients", "wireless", "wps", "dmz", "upnp", "remote-management", "forwarding"} {
-			probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			result := readers[name](probeCtx)
-			cancel()
+		for i, name := range names {
+			result := results[i]
 			matrix[name] = result.State
 			if result.Provenance == domain.ProvenanceFixture || source == domain.ProvenanceAbsent {
 				source = result.Provenance

@@ -183,6 +183,47 @@ func TestServe_CapabilitiesReflectVerification(t *testing.T) {
 	}
 }
 
+func TestServe_CapabilityProbeBudgetsAreIndependent(t *testing.T) {
+	wirelessStarted := make(chan struct{})
+	readers := map[string]observationReader{
+		"wireless": func(ctx context.Context) domain.Observation[any] {
+			close(wirelessStarted)
+			if err := ctx.Err(); err != nil {
+				return observationError(err, "wireless")
+			}
+			return observation(domain.UnsupportedOrUnverified, "provisional Wi-Fi", domain.ProvenanceObserved, true)
+		},
+	}
+	for _, name := range []string{"device", "status", "clients"} {
+		readers[name] = func(ctx context.Context) domain.Observation[any] {
+			select {
+			case <-wirelessStarted:
+				return observed("read", domain.ProvenanceObserved, true)
+			case <-ctx.Done():
+				return observationError(ctx.Err(), name)
+			}
+		}
+	}
+	for _, name := range []string{"wps", "dmz", "upnp", "remote-management", "forwarding"} {
+		readers[name] = func(context.Context) domain.Observation[any] {
+			return observationError(domain.ErrUnverifiedEndpoint, name)
+		}
+	}
+	result := assertObservation(t, observationHandler(capabilitiesReader(readers)), domain.Verified, http.StatusOK)
+	var matrix map[string]domain.ObservationState
+	if err := json.Unmarshal(result.Data, &matrix); err != nil {
+		t.Fatal(err)
+	}
+	if got := matrix["wireless_security"]; got != domain.UnsupportedOrUnverified {
+		t.Fatalf("wireless_security = %q, want %q", got, domain.UnsupportedOrUnverified)
+	}
+	for _, name := range []string{"device", "status", "clients"} {
+		if got := matrix[name]; got != domain.Verified {
+			t.Errorf("%s = %q, want %q", name, got, domain.Verified)
+		}
+	}
+}
+
 func TestServe_Status(t *testing.T) {
 	srv := newWR841NForServe(t, "admin", "hunter2")
 	host := strings.TrimPrefix(srv.server.URL, "http://")
