@@ -52,6 +52,8 @@ The runtime reads the router's web UI over HTTP, parses
 it into typed observations (the four knowledge states:
 `verified`, `absent`, `unsupported_or_unverified`, `unavailable`),
 and exposes those via `http://127.0.0.1:8484/v0/...`.
+See the [draft /v0 observation contract](docs/CONTRACT_V0.md) for the
+shared HTTP, CLI, and agent result format.
 The agent, called by the model, decides which observation
 to request next. The model reasons about the answer;
 the runtime enforces the evidence.
