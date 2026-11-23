@@ -13,7 +13,7 @@ export const mockDevice = {
   },
   managementAddress: "192.168.1.1",
   authenticated: "true",
-  provenance: "observed"
+  provenance: "fixture"
 };
 
 export const mockStatus = {
@@ -21,7 +21,7 @@ export const mockStatus = {
   wanStatus: "connected",
   uptimeSeconds: 20000,
   uptime: "5h33m20s",
-  provenance: "observed"
+  provenance: "fixture"
 };
 
 export const mockClients = {
@@ -53,45 +53,11 @@ export const mockCapabilities = {
     device: "verified",
     status: "verified",
     clients: "verified",
-    wireless_security: "unverified",
-    wps: "absent",
-    dmz: "verified",
-    upnp: "absent",
-    remote_management: "absent",
-    forwarding: "verified"
-  }
-};
-
-export const mockSecurity = {
-  dmz: {
-    state: "verified",
-    dmz_enabled: "false",
-    dmz_host: "",
-    description: "Demilitarized Zone forwarding is disabled. No internal host is fully exposed to WAN."
-  },
-  forwarding: {
-    state: "verified",
-    forwarding_rules: [],
-    description: "Virtual server and port forwarding rules. Currently 0 active forwarded ports."
-  },
-  wireless: {
-    state: "unavailable",
-    reason: "router-core: endpoint is unverified against captured traffic",
-    description: "WPA2-PSK status extraction pending lab verification."
-  },
-  wps: {
-    state: "unsupported_or_unverified",
-    reason: "WPS endpoint not present on this firmware build (HTTP 501)",
-    description: "Wi-Fi Protected Setup is absent or unsupported in hardware/firmware."
-  },
-  upnp: {
-    state: "unsupported_or_unverified",
-    reason: "UPnP endpoint not present on this firmware build (HTTP 501)",
-    description: "Universal Plug and Play is absent or unsupported in hardware/firmware."
-  },
-  remote_management: {
-    state: "unsupported_or_unverified",
-    reason: "Remote Management endpoint not present on this firmware build (HTTP 501)",
-    description: "Remote WAN management interface is disabled/absent."
+    wireless_security: "unsupported_or_unverified",
+    wps: "unsupported_or_unverified",
+    dmz: "unsupported_or_unverified",
+    upnp: "unsupported_or_unverified",
+    remote_management: "unsupported_or_unverified",
+    forwarding: "unsupported_or_unverified"
   }
 };

@@ -15,7 +15,14 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { mockDevice, mockStatus, mockClients, mockCapabilities, mockSecurity } from "@/data/mockData";
+import { mockDevice, mockStatus, mockClients, mockCapabilities } from "@/data/mockData";
+
+const fixtureExample = (data) => ({
+  state: "verified",
+  reason: "synthetic fixture example",
+  provenance: "fixture",
+  data
+});
 
 export function LandingPage({ onOpenDashboard }) {
   const [selectedEndpoint, setSelectedEndpoint] = useState("/v0/device");
@@ -24,17 +31,22 @@ export function LandingPage({ onOpenDashboard }) {
   const getEndpointData = (endpoint) => {
     switch (endpoint) {
       case "/v0/device":
-        return mockDevice;
+        return fixtureExample(mockDevice);
       case "/v0/status":
-        return mockStatus;
+        return fixtureExample(mockStatus);
       case "/v0/clients":
-        return mockClients;
+        return fixtureExample(mockClients.clients);
       case "/v0/capabilities":
-        return mockCapabilities;
+        return fixtureExample(mockCapabilities.capabilities);
       case "/v0/security/dmz":
-        return mockSecurity.dmz;
+        return {
+          state: "unsupported_or_unverified",
+          reason: "no verified DMZ observation in this example",
+          provenance: "absent",
+          data: null
+        };
       default:
-        return mockDevice;
+        return fixtureExample(mockDevice);
     }
   };
 
@@ -173,13 +185,13 @@ export function LandingPage({ onOpenDashboard }) {
           <div>
             <div className="inline-flex items-center gap-1.5 text-xs font-mono text-emerald-400 mb-2">
               <Code2 className="h-4 w-4" />
-              <span>STABLE HTTP SURFACE</span>
+              <span>DRAFT HTTP CONTRACT</span>
             </div>
             <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
               Contract-First API Explorer
             </h2>
             <p className="mt-1 text-sm text-slate-400">
-              Defined in <code className="text-slate-300">docs/FRONTEND_CONTRACT.md</code> and consumed by both this UI and MiniMax M3.
+              Synthetic examples of the draft in <code className="text-slate-300">docs/CONTRACT_V0.md</code>.
             </p>
           </div>
 
