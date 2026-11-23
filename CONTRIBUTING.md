@@ -17,8 +17,8 @@ review surface small.
 ## Development setup
 
 ```bash
-git clone https://github.com/Quiarom/router-core.git
-cd router-core
+git clone https://github.com/Quiarom/gavetero.git
+cd gavetero
 go version         # 1.25 or newer
 go build ./...
 go test ./... -race

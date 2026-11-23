@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Aplicación local de observación segura para routers"
 authors = ["router-core authors"]
 license = "MIT"
-repository = "https://github.com/Quiarom/router-core"
+repository = "https://github.com/Quiarom/gavetero"
 edition = "2021"
 rust-version = "1.77.2"
 

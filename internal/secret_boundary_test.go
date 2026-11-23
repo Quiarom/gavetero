@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Quiarom/router-core/internal/domain"
+	"github.com/Quiarom/gavetero/internal/domain"
 )
 
 // forbiddenSubstrings is the canonical list of credentials that

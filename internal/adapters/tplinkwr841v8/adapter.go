@@ -17,8 +17,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Quiarom/router-core/internal/domain"
-	"github.com/Quiarom/router-core/internal/transport"
+	"github.com/Quiarom/gavetero/internal/domain"
+	"github.com/Quiarom/gavetero/internal/transport"
 )
 
 type session struct {

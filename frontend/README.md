@@ -1,7 +1,7 @@
 # router-core frontend
 
 React 19 + Vite 8 + Tailwind 4 dashboard for
-[router-core](https://github.com/Quiarom/router-core). It consumes
+[router-core](https://github.com/Quiarom/gavetero). It consumes
 the typed HTTP surface documented in
 [`docs/FRONTEND_CONTRACT.md`](../docs/FRONTEND_CONTRACT.md).
 

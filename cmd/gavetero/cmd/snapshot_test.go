@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Quiarom/router-core/cmd/gavetero/cmd"
+	"github.com/Quiarom/gavetero/cmd/gavetero/cmd"
 )
 
 func runWithArgs(t *testing.T, args []string) (string, string, error) {

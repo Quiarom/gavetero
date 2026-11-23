@@ -28,7 +28,7 @@ problem.
 
 Instead, open a **private security advisory** on GitHub:
 
-1. Go to <https://github.com/Quiarom/router-core/security/advisories/new>.
+1. Go to <https://github.com/Quiarom/gavetero/security/advisories/new>.
 2. Title it clearly, e.g. `runtime: Authenticated response parser overflow in tplinkwr841v8.ParseIdentity`.
 3. Include:
    - The exact commit or tag where you reproduced the issue.

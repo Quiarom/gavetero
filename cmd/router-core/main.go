@@ -10,7 +10,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/Quiarom/router-core/cmd/router-core/cmd"
+	"github.com/Quiarom/gavetero/cmd/router-core/cmd"
 )
 
 func init() {

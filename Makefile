@@ -18,7 +18,7 @@ build:
 	@# 2. Now build gavetero. go:embed picks up the binaries above
 	#    and bakes them into the gavetero binary. The user only
 	#    needs to install gavetero; the sidecars travel inside it.
-	$(GO) build -ldflags="-X main.version=$(VERSION) -X github.com/Quiarom/router-core/cmd/gavetero/cmd.version=$(VERSION)" -o $(DIST)/gavetero ./cmd/gavetero
+	$(GO) build -ldflags="-X main.version=$(VERSION) -X github.com/Quiarom/gavetero/cmd/gavetero/cmd.version=$(VERSION)" -o $(DIST)/gavetero ./cmd/gavetero
 	@ln -sf gavetero $(DIST)/gvt
 	@# 3. The transitional binaries are also written next to
 	#    gavetero in $(DIST). The Tauri desktop build copies

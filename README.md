@@ -3,7 +3,7 @@
 > **A typed local API and an evidence-aware AI agent for legacy
 > consumer routers — without replacing the firmware.**
 
-[![CI](https://github.com/Quiarom/router-core/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
+[![CI](https://github.com/Quiarom/gavetero/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![MiniMax Week 2026](https://img.shields.io/badge/MiniMax_Week-2026-blue)](https://www.gmicloud.ai/minimax-week)
@@ -79,7 +79,7 @@ The user-facing install is one command. No sudo, no Go,
 no system packages:
 
 ```sh
-curl -sSf https://raw.githubusercontent.com/Quiarom/router-core/gavetero-v0.1.0-alpha.1/install.sh | sh
+curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/main/install.sh | bash
 ```
 
 This downloads the prebuilt single binary for your platform

@@ -3,10 +3,10 @@
 # install.sh - user-facing installer for Gavetero.
 #
 # Usage:
-#   curl -sSf https://raw.githubusercontent.com/Quiarom/router-core/integration/gavetero/install.sh | sh
+#   curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/main/install.sh | bash
 #
 # Environment variables (set ONE of these):
-#   GAVETERO_VERSION=v0.1.0-alpha.1   - install that release tag
+#   GAVETERO_VERSION=<tag>            - install that release tag
 #   GAVETERO_COMMIT=<sha>             - install that commit (via GitHub Actions artifact)
 #   (none)                           - install the latest stable release
 #
@@ -23,7 +23,7 @@
 
 set -euo pipefail
 
-REPO="Quiarom/router-core"
+REPO="Quiarom/gavetero"
 BIN="gavetero"
 DEST="${HOME}/.local/bin"
 
@@ -51,7 +51,7 @@ detect_platform() {
 # Resolve the download URL.
 #
 # Priority:
-#   1. GAVETERO_VERSION (e.g. v0.1.0-alpha.1) - GitHub Releases
+#   1. GAVETERO_VERSION (a release tag) - GitHub Releases
 #   2. GAVETERO_COMMIT (e.g. abc1234) - Actions artifact
 #   3. neither - latest release (or fall back to make install-user)
 # ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ main() {
     echo ""
     echo "This script does not support your platform. Build from source instead:"
     echo "  git clone https://github.com/${REPO}.git"
-    echo "  cd router-core"
+    echo "  cd gavetero"
     echo "  make install-user"
     exit 1
   fi
@@ -100,8 +100,8 @@ main() {
     echo "If you are a developer working in the repo, use:"
     echo "  make install-user"
     echo ""
-    echo "If you are a user, set GAVETERO_VERSION to a published release:"
-    echo "  GAVETERO_VERSION=v0.1.0-alpha.1 curl -sSf .../install.sh | sh"
+    echo "If you are a user, set GAVETERO_VERSION to a tag listed at https://github.com/${REPO}/releases:"
+    echo "  curl -sSf https://raw.githubusercontent.com/${REPO}/main/install.sh | GAVETERO_VERSION=vX.Y.Z bash"
     exit 1
   fi
 

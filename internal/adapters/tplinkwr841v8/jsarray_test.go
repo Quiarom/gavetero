@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Quiarom/router-core/internal/domain"
+	"github.com/Quiarom/gavetero/internal/domain"
 )
 
 func TestExtractArray(t *testing.T) {

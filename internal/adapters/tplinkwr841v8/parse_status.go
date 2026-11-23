@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Quiarom/router-core/internal/domain"
+	"github.com/Quiarom/gavetero/internal/domain"
 )
 
 var errUnexpectedShape = errors.New("router-core: unexpected response shape")

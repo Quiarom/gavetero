@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Quiarom/router-core/internal/transport"
+	"github.com/Quiarom/gavetero/internal/transport"
 )
 
 func TestLiveOptIn(t *testing.T) {

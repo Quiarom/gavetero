@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Quiarom/router-core/cmd/router-core/cmd"
+	"github.com/Quiarom/gavetero/cmd/router-core/cmd"
 )
 
 // runWithArgs executes the root command with the given args and

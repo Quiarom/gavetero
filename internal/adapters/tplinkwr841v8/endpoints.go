@@ -3,7 +3,7 @@ package tplinkwr841v8
 import (
 	"os"
 
-	"github.com/Quiarom/router-core/internal/domain"
+	"github.com/Quiarom/gavetero/internal/domain"
 )
 
 type Endpoint struct {

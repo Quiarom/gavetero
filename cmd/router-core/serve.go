@@ -20,10 +20,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Quiarom/router-core/internal/adapters/fixture"
-	"github.com/Quiarom/router-core/internal/adapters/tplinkwr841v8"
-	"github.com/Quiarom/router-core/internal/domain"
-	"github.com/Quiarom/router-core/internal/transport"
+	"github.com/Quiarom/gavetero/internal/adapters/fixture"
+	"github.com/Quiarom/gavetero/internal/adapters/tplinkwr841v8"
+	"github.com/Quiarom/gavetero/internal/domain"
+	"github.com/Quiarom/gavetero/internal/transport"
 )
 
 type sessionStore struct {
