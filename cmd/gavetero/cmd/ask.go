@@ -60,8 +60,9 @@ func newAskCmd() *cobra.Command {
 		Short: "Investigate a network question with MiniMax M3",
 		Long: `ask sends a question to the local MiniMax M3 agent and prints
 the answer. The local runtime (router-core) is started
-automatically in mock mode (no network, no physical router
-required) for the duration of this command.
+automatically in mock mode (fixture files, no physical router
+required) for the duration of this command. --dry-run uses
+the deterministic agent without contacting GMI Cloud.
 
 With --live --host X, the runtime talks to a real router at
 X. The same HTTP API exposes the router's observations to
@@ -71,7 +72,7 @@ Output modes:
 
   human   the answer and a short summary of the tool calls
   json    the full JSON object returned by the agent
-  jsonl   one event per line: tool_call, observation, completed
+  jsonl   one compact chat result per line, with observations in steps[].result
 
 The default model is MiniMaxAI/MiniMax-M3, served by GMI
 Cloud. The fallback model is MiniMaxAI/MiniMax-M2.7 when
@@ -408,9 +409,6 @@ func buildAgentServeArgs(opts askOptions, addr, routerURL string) []string {
 	return args
 }
 
-// renderAskJSONL is the shared JSONL renderer used by both
-// `gvt ask` and `gvt inspect --output jsonl`. Each observation
-// is a single line with kind+data.
 func renderAskJSONL(w io.Writer, result map[string]any) error {
 	b, err := json.Marshal(result)
 	if err != nil {

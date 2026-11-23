@@ -143,12 +143,16 @@ gvt inspect
 
 gvt ask "Is my Wi-Fi exposed?" --dry-run
 #   Tools called: 3
-#     1. get_security /v0/security/dmz -> 404
-#     2. get_security /v0/security/forwarding -> 404
-#     3. get_security /v0/security/upnp -> 404
+#     1. get_security /v0/security/wireless -> 404
+#     2. get_security /v0/security/wps -> 404
+#     3. get_security /v0/security/remote-management -> 404
 #   Model: MiniMaxAI/MiniMax-M3
 #   Mode:  stub
 ```
+
+`--dry-run` uses the deterministic agent without calling GMI Cloud.
+With `gvt ask --output jsonl`, each invocation emits one compact chat result;
+the observation envelopes are in `steps[].result`.
 
 ## Commands
 
