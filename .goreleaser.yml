@@ -73,7 +73,7 @@ release:
     ## Install
 
     ```sh
-    curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/main/install.sh | sh
+    curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/{{ .Tag }}/install.sh | GAVETERO_VERSION={{ .Tag }} bash
     ```
 
   prerelease: '{{ .Prerelease }}'
