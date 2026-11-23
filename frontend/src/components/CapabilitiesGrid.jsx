@@ -2,6 +2,15 @@ import React, { useState, useEffect } from "react";
 import { X, RotateCw } from "lucide-react";
 import { getRouterData } from "@/lib/desktop";
 
+const CAPABILITY_ALIASES = {
+  wireless_security: "wireless",
+  wps_state: "wps",
+  dmz_state: "dmz",
+  upnp_state: "upnp",
+  remote_management: "remote-management",
+  forwarding_rules: "forwarding"
+};
+
 const getCapabilityMeta = (key) => {
   switch (key) {
     case "device":
@@ -22,7 +31,7 @@ const getCapabilityMeta = (key) => {
         path: "/v0/clients",
         desc: "Concesiones DHCP observadas; no representan todos los equipos de la red."
       };
-    case "wireless_security":
+    case "wireless":
       return {
         label: "Seguridad Inalámbrica (Wi-Fi)",
         path: "/v0/security/wireless",
@@ -52,7 +61,7 @@ const getCapabilityMeta = (key) => {
         path: "/v0/security/upnp",
         desc: "Configuración de Universal Plug and Play."
       };
-    case "remote_management":
+    case "remote-management":
       return {
         label: "Gestión Remota",
         path: "/v0/security/remote-management",
@@ -112,10 +121,21 @@ export function capabilityStateText(state, provenance) {
   }
 }
 
+export function capabilityResponseText(response) {
+  if (response?.data?.state) return JSON.stringify(response.data, null, 2);
+  if (response?.status) return `HTTP ${response.status}: respuesta sin sobre /v0.`;
+  if (response?.error) return `Error: ${response.error}`;
+  return "Sin respuesta HTTP de la API.";
+}
+
 export function CapabilitiesGrid({ capabilities = {}, isLive = false }) {
   const [selectedCap, setSelectedCap] = useState(null);
   const [liveResponse, setLiveResponse] = useState(null);
   const [loadingLive, setLoadingLive] = useState(false);
+  const entries = new Map(Object.entries(capabilities).map(([key, state]) => {
+    const canonical = Object.hasOwn(CAPABILITY_ALIASES, key) ? CAPABILITY_ALIASES[key] : key;
+    return [canonical, capabilities[canonical] ?? state];
+  }));
 
   useEffect(() => {
     if (!selectedCap || !isLive) return;
@@ -145,7 +165,7 @@ export function CapabilitiesGrid({ capabilities = {}, isLive = false }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 font-sans">
-        {Object.entries(capabilities).map(([key, state]) => {
+        {Array.from(entries, ([key, state]) => {
           const meta = getCapabilityMeta(key);
           const badge = getStatusBadge(state);
 
@@ -213,7 +233,7 @@ export function CapabilitiesGrid({ capabilities = {}, isLive = false }) {
                 <span className="text-neutral-400 block mb-1 text-[11px] uppercase">ESTADO EN EL CONTRATO:</span>
                 <div className="bg-black border border-neutral-800 p-3 text-xs text-neutral-300 font-sans">
                   {loadingLive ? "Consultando la observación..." : capabilityStateText(
-                    isLive ? liveResponse?.data?.state : capabilities[selectedCap],
+                    isLive ? liveResponse?.data?.state : entries.get(selectedCap),
                     isLive ? liveResponse?.data?.provenance : "fixture"
                   )}
                 </div>
@@ -243,12 +263,8 @@ export function CapabilitiesGrid({ capabilities = {}, isLive = false }) {
                   </div>
                   <pre className="bg-black border border-neutral-800 p-3 text-xs text-neutral-300 font-mono overflow-x-auto max-h-40 leading-tight">
                     {loadingLive
-                      ? "Consultando API en vivo..."
-                      : liveResponse?.data
-                      ? JSON.stringify(liveResponse.data, null, 2)
-                      : liveResponse?.error
-                      ? `Error: ${liveResponse.error}`
-                      : "Sin respuesta de la API"}
+                      ? "Consultando la API..."
+                      : capabilityResponseText(liveResponse)}
                   </pre>
                 </div>
               )}

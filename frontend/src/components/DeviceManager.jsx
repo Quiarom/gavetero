@@ -20,11 +20,7 @@ export function DeviceManager({ clients, state }) {
     } catch (e) {
       console.error(e);
     }
-    return {
-      "00:11:22:33:44:55": "Computadora Portátil",
-      "AA:BB:CC:11:22:33": "Teléfono Personal",
-      "10:20:30:40:50:60": "Smart TV Sala"
-    };
+    return {};
   });
 
   const [editingMac, setEditingMac] = useState(null);
@@ -42,7 +38,7 @@ export function DeviceManager({ clients, state }) {
 
   const handleStartEdit = (mac, currentAlias) => {
     setEditingMac(mac);
-    setTempAlias(currentAlias);
+    setTempAlias(currentAlias ?? "");
   };
 
   const handleSaveAlias = (mac) => {
@@ -116,7 +112,8 @@ export function DeviceManager({ clients, state }) {
       {/* Devices Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {visibleClients.map((client) => {
-          const alias = aliases[client.mac] || client.name || "Dispositivo";
+          const alias = aliases[client.mac];
+          const dhcpName = client.name || "No informado";
           const isEditing = editingMac === client.mac;
 
           return (
@@ -164,19 +161,20 @@ export function DeviceManager({ clients, state }) {
                         <span
                           onClick={() => handleStartEdit(client.mac, alias)}
                           className="text-sm font-bold text-white hover:text-primary transition-colors cursor-pointer truncate font-mono"
-                          title="Clic para editar nombre"
+                          title="Clic para editar alias local"
                         >
-                          {alias}
+                          {alias || dhcpName}
                         </span>
                         <button
                           onClick={() => handleStartEdit(client.mac, alias)}
                           className="opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-primary transition-opacity p-0.5 cursor-pointer"
-                          title="Cambiar nombre"
+                          title="Editar alias local"
                         >
                           <Edit3 className="h-3 w-3" />
                         </button>
                       </div>
                     )}
+                    {alias && <p className="text-xs text-neutral-400">Alias local · Nombre DHCP: {dhcpName}</p>}
                   </div>
                 </div>
 
@@ -185,7 +183,7 @@ export function DeviceManager({ clients, state }) {
                     <button
                       onClick={() => handleResetAlias(client.mac)}
                       className="text-neutral-500 hover:text-neutral-300 transition-colors p-1 cursor-pointer"
-                      title="Restablecer nombre original"
+                      title="Borrar alias local"
                     >
                       <RotateCcw className="h-3 w-3" />
                     </button>

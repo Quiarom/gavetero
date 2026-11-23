@@ -112,7 +112,7 @@ export function DashboardView({ isLive = false, observations = {}, fetchError, l
     state: leases.state,
     clients: leaseRows.map((client) => ({
       ...client,
-      name: client.name?.value || (typeof client.name === "string" ? client.name : null) || "Dispositivo sin nombre"
+      name: client.name?.value || (typeof client.name === "string" ? client.name : null)
     }))
   } : { ...NO_CLIENTS, state: leases?.state === "unsupported_or_unverified" ? leases.state : "unavailable" };
   const capabilities = isLive ? verifiedData(observations.capabilities) ?? {} : mockCapabilities.capabilities;

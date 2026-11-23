@@ -15,40 +15,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { mockDevice, mockStatus, mockClients, mockCapabilities } from "@/data/mockData";
-
-const fixtureExample = (data) => ({
-  state: "verified",
-  reason: "synthetic fixture example",
-  provenance: "fixture",
-  data
-});
+import { mockObservations } from "@/data/mockData";
 
 export function LandingPage({ onOpenDashboard }) {
   const [selectedEndpoint, setSelectedEndpoint] = useState("/v0/device");
   const [copied, setCopied] = useState(false);
 
-  const getEndpointData = (endpoint) => {
-    switch (endpoint) {
-      case "/v0/device":
-        return fixtureExample(mockDevice);
-      case "/v0/status":
-        return fixtureExample(mockStatus);
-      case "/v0/clients":
-        return fixtureExample(mockClients.clients);
-      case "/v0/capabilities":
-        return fixtureExample(mockCapabilities.capabilities);
-      case "/v0/security/dmz":
-        return {
-          state: "unsupported_or_unverified",
-          reason: "no verified DMZ observation in this example",
-          provenance: "absent",
-          data: null
-        };
-      default:
-        return fixtureExample(mockDevice);
-    }
-  };
+  const endpointData = mockObservations[selectedEndpoint];
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
@@ -229,7 +202,7 @@ export function LandingPage({ onOpenDashboard }) {
               </span>
             </div>
             <button
-              onClick={() => copyToClipboard(JSON.stringify(getEndpointData(selectedEndpoint), null, 2))}
+              onClick={() => copyToClipboard(JSON.stringify(endpointData, null, 2))}
               className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 font-mono transition-colors"
             >
               {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
@@ -238,7 +211,7 @@ export function LandingPage({ onOpenDashboard }) {
           </div>
           <div className="p-4 overflow-x-auto max-h-96">
             <pre className="font-mono text-xs text-slate-300 leading-relaxed">
-              {JSON.stringify(getEndpointData(selectedEndpoint), null, 2)}
+              {JSON.stringify(endpointData, null, 2)}
             </pre>
           </div>
         </div>

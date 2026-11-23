@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
+import { mockAssistantReply } from "../src/lib/mockAssistant.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..");
@@ -80,11 +81,41 @@ test("turn 4 is the final assistant answer, in Spanish, with a recommendation", 
   assert.ok(/WPA2|wpa2/i.test(t.content), "answer must reference WPA2");
 });
 
+test("mock assistant uses v0 envelopes and draws no security conclusions from missing data", () => {
+  for (const question of ["¿Está expuesto mi Wi-Fi?", "Is my Wi-Fi exposed?", "¿Está encendida la DMZ?"]) {
+    const { answer, steps } = mockAssistantReply(question);
+    assert.match(answer, /no es evidencia del router actual/);
+    assert.match(answer, /no permiten determinar la configuración ni descartar riesgos/);
+    assert.deepEqual(steps.map(({ path }) => path), ["/v0/security/wireless", "/v0/security/wps", "/v0/security/dmz"]);
+    for (const { http_status, result } of steps) {
+      assert.equal(http_status, 404);
+      assert.deepEqual(result, {
+        state: "unsupported_or_unverified", reason: result.reason, provenance: "absent", data: null
+      });
+      assert.ok(result.reason && answer.includes(result.reason));
+    }
+  }
+});
+
+test("mock assistant reports DHCP leases, not active devices, and uses v0 envelopes for general queries", () => {
+  const { answer, steps: [clients] } = mockAssistantReply("¿Quién está conectado?");
+  assert.match(answer, /no demuestran qué dispositivos están conectados ahora/);
+  assert.equal(clients.result.state, "verified");
+  assert.equal(clients.result.provenance, "fixture");
+  assert.ok(clients.result.data[0].name.value);
+  assert.ok(clients.result.data[0].leaseTime.value);
+  for (const { result } of mockAssistantReply("Resumen").steps) {
+    assert.deepEqual(Object.keys(result).sort(), ["data", "provenance", "reason", "state"]);
+    assert.ok(result.data);
+  }
+});
+
 describe("honest dashboard observations", () => {
   let server;
   let DashboardView;
   let CapabilitiesGrid;
   let capabilityStateText;
+  let capabilityResponseText;
 
   before(async () => {
     server = await createServer({
@@ -92,7 +123,7 @@ describe("honest dashboard observations", () => {
       server: { middlewareMode: true, watch: null, ws: false }
     });
     ({ DashboardView } = await server.ssrLoadModule("/src/components/Dashboard.jsx"));
-    ({ CapabilitiesGrid, capabilityStateText } = await server.ssrLoadModule("/src/components/CapabilitiesGrid.jsx"));
+    ({ CapabilitiesGrid, capabilityStateText, capabilityResponseText } = await server.ssrLoadModule("/src/components/CapabilitiesGrid.jsx"));
   });
   after(async () => {
     await server?.close();
@@ -157,5 +188,46 @@ describe("honest dashboard observations", () => {
     const observations = { device: response(503, "unavailable", "absent", null, "Falló la lectura de identidad") };
     assert.match(dashboard(observations), /Falló la lectura de identidad/);
     assert.doesNotMatch(dashboard(observations, false), /role="alert"|Falló la lectura de identidad/);
+  });
+
+  test("local client cards show the DHCP name and identify any persisted alias", (t) => {
+    const clients = response(200, "verified", "observed", [
+      { name: { value: "android-1a2b" }, ip: "192.168.1.100", mac: "00:11:22:33:44:55" }
+    ]);
+    assert.match(dashboard({ clients }), /android-1a2b/);
+    assert.doesNotMatch(dashboard({ clients }), /Computadora Portátil/);
+    const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: { getItem: () => '{"00:11:22:33:44:55":"Casa"}' }
+    });
+    t.after(() => {
+      if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
+      else delete globalThis.localStorage;
+    });
+    const html = dashboard({ clients });
+    assert.match(html, />Casa</);
+    assert.match(html, /Alias local · Nombre DHCP: android-1a2b/);
+  });
+
+  test("capability aliases render only canonical security routes", () => {
+    const html = renderToStaticMarkup(createElement(CapabilitiesGrid, {
+      capabilities: {
+        wireless: "unsupported_or_unverified", wireless_security: "verified",
+        remote_management: "unavailable", "remote-management": "unavailable", wps_state: "absent"
+      }
+    }));
+    for (const route of ["wireless", "remote-management", "wps"]) {
+      assert.equal(html.split(`/v0/security/${route}`).length, 2);
+    }
+    assert.doesNotMatch(html, /\/v0\/wireless|\/v0\/wps_state|>VERIFICADO</);
+    assert.match(html, /POR VERIFICAR/);
+  });
+
+  test("a non-envelope 404 is distinguished from no response; a v0 404 displays the envelope", () => {
+    assert.match(capabilityResponseText({ status: 404, data: null }), /HTTP 404: respuesta sin sobre/);
+    assert.match(capabilityResponseText({ status: 0 }), /Sin respuesta HTTP/);
+    const { data } = response(404, "unsupported_or_unverified", "absent", null);
+    assert.deepEqual(JSON.parse(capabilityResponseText({ status: 404, data })), data);
   });
 });
