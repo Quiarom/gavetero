@@ -5,7 +5,7 @@ PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 SIDECAR_DIR = cmd/gavetero/cmd/sidecars
 
-.PHONY: build install-user uninstall-user fmt vet test check \
+.PHONY: build release-snapshot install-user uninstall-user fmt vet test check \
         frontend-install frontend-test frontend-build \
         dev dev-live clean
 
@@ -35,6 +35,9 @@ build:
 	@echo "  $(DIST)/router-core         -- sidecar copy (Tauri / harness)"
 	@echo "  $(DIST)/router-core-agent   -- sidecar copy (Tauri / harness)"
 	@echo "  $(DIST)/router-core-learn   -- lab tool"
+
+release-snapshot:
+	goreleaser release --snapshot --clean --parallelism 1
 
 # Install the user-facing binary into ~/.local/bin.
 # Because gavetero now embeds the sidecars, only one file is

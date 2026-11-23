@@ -1,5 +1,6 @@
 # .goreleaser.yml — runs on `goreleaser release` (locally) or in CI
 # on `git tag v*`. See https://goreleaser.com for full schema.
+# --parallelism 1 is required: per-target sidecars share the embed directory.
 version: 2
 
 project_name: gavetero
