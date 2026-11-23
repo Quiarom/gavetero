@@ -37,15 +37,10 @@ jobs:
           cache: true
       - name: gofmt
         run: test -z "$(gofmt -l .)"
+      - name: go build (all binaries with embedded sidecars)
+        run: make build
       - name: go vet
         run: go vet ./...
-      - name: go build (all binaries)
-        run: |
-          mkdir -p bin
-          go build -o bin/router-core      ./cmd/router-core
-          go build -o bin/router-core-agent ./cmd/router-core-agent
-          go build -o bin/router-core-learn ./cmd/router-core-learn
-          go build -o bin/gavetero          ./cmd/gavetero
       - name: go test
         run: go test ./... -race -count=1
       - name: upload binaries
@@ -105,11 +100,7 @@ jobs:
           go-version: '1.25'
           cache: true
       - name: Build all binaries
-        run: |
-          mkdir -p bin
-          go build -o bin/router-core      ./cmd/router-core
-          go build -o bin/router-core-agent ./cmd/router-core-agent
-          go build -o bin/gavetero          ./cmd/gavetero
+        run: make build
       - name: Simulate ~/.local/bin install
         run: |
           mkdir -p /tmp/gvt-test/bin
