@@ -1,4 +1,6 @@
-# Project Status — Hackathon Submission
+# Project Status
+
+Event background is in [docs/hackathon/](hackathon/minimax-week-2026.md).
 
 ## TL;DR for non-engineers
 
@@ -207,7 +209,7 @@ The package is written under
 
 ## Where we're going
 
-The hackathon scope is "Reasoning" — we want an AI agent to be able
+The goal is for an AI agent to be able
 to ask the router "what's your current state?" and get a typed,
 sanitized answer back. Phase-by-phase:
 

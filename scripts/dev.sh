@@ -13,7 +13,7 @@ set -euo pipefail
 #
 # Combinations:
 #   --router mock --agent stub   (no network, no API key)        -> CI / smoke
-#   --router mock --agent live   (no hardware, real M3)          -> submission demo
+#   --router mock --agent live   (no hardware, real M3)          -> demo
 #   --router live --agent live   (real router, real M3)          -> end-to-end
 #
 # The script never silently switches to paid/live inference because a

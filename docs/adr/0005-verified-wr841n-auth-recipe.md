@@ -100,5 +100,5 @@ uses `authedFetch` against `/userRpm/StatusRpm.htm`.
 
 - ADR 0003 (capability + recipe authority) is still DRAFT and is the
   next architectural step. It does NOT apply to Phase 3 minimum.
-- A OS keyring persistence (`Adapter.SessionFile`) is post-hackathon
-  scope (ADR 0005 § future).
+- OS keyring persistence (`Adapter.SessionFile`) is deferred
+  (ADR 0005 § future).

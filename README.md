@@ -6,7 +6,6 @@
 [![CI](https://github.com/Quiarom/router-core/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![MiniMax Week 2026](https://img.shields.io/badge/MiniMax_Week-2026-blue)](https://www.gmicloud.ai/minimax-week)
 
 Gavetero turns an aging router dashboard into a typed local API
 that you (or an AI agent) can investigate. The runtime is

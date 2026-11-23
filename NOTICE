@@ -28,7 +28,7 @@ source's license.
    The post-Phase-0 work on the same branch — the verified
    authentication recipe (commit `0ad9899`, ADR 0005), the
    `router-core serve` runtime binary, the comment cleanup, the
-   hackathon submission brief (HACKATHON.md), and the cleanup
+   project brief (originally HACKATHON.md), and the cleanup
    commits `3897a7b` and `a1936b0` — was produced by the router-core
    author and collaborators, not by Devin.
 
