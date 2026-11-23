@@ -160,7 +160,7 @@ func runAsk(stdout, stderr io.Writer, opts askOptions) error {
 	}
 
 	// 1. Resolve the API key. Precedence: env > keyring > error.
-	apiKey, err := resolveAPIKey()
+	keyEnv, apiKey, err := resolveAPIKey()
 	if err != nil && !opts.DryRun {
 		return err
 	}
@@ -220,17 +220,16 @@ func runAsk(stdout, stderr io.Writer, opts askOptions) error {
 	}
 
 	// 5. Start the router-core-agent sidecar.
-	agentCmd := exec.CommandContext(ctx, agentBin, buildAgentServeArgs(opts, agentAddr, routerURL)...)
+	agentCmd := exec.CommandContext(ctx, agentBin, buildAgentServeArgs(opts, agentAddr, routerURL, keyEnv)...)
 	if opts.VerboseAgent {
 		agentCmd.Stderr = stderr
 	} else {
 		agentCmd.Stderr = io.Discard
 	}
 	agentCmd.Stdout = io.Discard
-	// Inject the API key as an env var, not as a flag. The agent
-	// picks it up via GMI_SERVING_API_KEY automatically.
+	// Pass the name as a flag, but keep the key in the environment.
 	if apiKey != "" {
-		agentCmd.Env = append(os.Environ(), "GMI_SERVING_API_KEY="+apiKey)
+		agentCmd.Env = append(os.Environ(), keyEnv+"="+apiKey)
 	}
 	if err := agentCmd.Start(); err != nil {
 		return fmt.Errorf("start router-core-agent: %w", err)
@@ -323,17 +322,17 @@ func renderAskHuman(stdout io.Writer, result map[string]any, opts askOptions) er
 	return nil
 }
 
-func resolveAPIKey() (string, error) {
-	if env := os.Getenv("GMI_SERVING_API_KEY"); env != "" {
-		return env, nil
+func resolveAPIKey() (string, string, error) {
+	if key := strings.TrimSpace(os.Getenv(envVarName)); key != "" {
+		return envVarName, key, nil
 	}
-	if v, err := keyringGet("gavetero", "gmi-cloud-api-key"); err == nil && v != "" {
-		return v, nil
+	if key, err := keyringGet(keyringService, keyringAccount); err == nil && strings.TrimSpace(key) != "" {
+		return envVarName, strings.TrimSpace(key), nil
 	}
-	return "", fmt.Errorf(
-		"GMI API key not found.\n" +
-			"  - export GMI_SERVING_API_KEY=YOUR_KEY\n" +
-			"  - or run `gvt setup` to store the key in the OS credential store",
+	return envVarName, "", fmt.Errorf(
+		"GMI API key not found.\n"+
+			"  - export %s=YOUR_KEY\n"+
+			"  - or run `gvt setup` to store the key in the OS credential store", envVarName,
 	)
 }
 
@@ -390,13 +389,14 @@ func buildRouterServeArgs(opts askOptions, addr string) []string {
 // buildAgentServeArgs returns the argv slice for the
 // router-core-agent sidecar. router-core-agent is a flag-driven
 // binary (no subcommand); all options are passed as flags.
-func buildAgentServeArgs(opts askOptions, addr, routerURL string) []string {
+func buildAgentServeArgs(opts askOptions, addr, routerURL, keyEnv string) []string {
 	args := []string{
 		"--router-core-url", routerURL,
 		"--serve", addr,
 		"--question", opts.Question,
 		"--model", opts.Model,
 		"--timeout", fmt.Sprintf("%ds", int(opts.Timeout.Seconds())),
+		"--key-env", keyEnv,
 	}
 	if opts.DryRun {
 		args = append(args, "--dry-run")
