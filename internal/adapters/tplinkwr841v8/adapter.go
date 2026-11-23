@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -113,24 +114,35 @@ func (a *Adapter) authedFetch(ctx context.Context, rawURL string) ([]byte, int, 
 // dashboard body when the Referer points to the parent frameset
 // page; the fallback is kept for the older 68-byte rejection
 // case.
-func (a *Adapter) authedFetchWithFallback(ctx context.Context, path string) ([]byte, int, error) {
+func (a *Adapter) authedFetchWithFallback(ctx context.Context, path string) ([]byte, error) {
 	if a.session == nil {
-		return nil, 0, fmt.Errorf("%w: call Adapter.Login(ctx, user, password) first", domain.ErrCaptureMissing)
+		return nil, fmt.Errorf("%w: call Adapter.Login(ctx, user, password) first", domain.ErrCaptureMissing)
 	}
 	host := a.host
 	url := strings.TrimRight(normalizeRoot(host), "/") + path
 
 	body, status, err := a.transport.GetWithBasicAuthAndReferer(ctx, url, a.session.referer, a.session.user, a.session.password)
-	if err != nil {
-		return body, status, err
-	}
-	if isNoAuthBody(body, status) {
+	if err == nil && isNoAuthBody(body, status) {
 		altBody, altStatus, altErr := a.transport.GetWithBasicAuth(ctx, url, a.session.user, a.session.password)
 		if altErr == nil && !isNoAuthBody(altBody, altStatus) {
-			return altBody, altStatus, nil
+			return observationBody(altBody, altStatus, nil)
 		}
 	}
-	return body, status, nil
+	return observationBody(body, status, err)
+}
+
+func observationBody(body []byte, status int, err error) ([]byte, error) {
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case status >= http.StatusOK && status < http.StatusMultipleChoices:
+		return body, nil
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return nil, fmt.Errorf("tplinkwr841v8: observation got HTTP %d: %w", status, domain.ErrUnauthenticated)
+	default:
+		return nil, fmt.Errorf("tplinkwr841v8: observation got HTTP %d: %w", status, domain.ErrUnexpectedResponse)
+	}
 }
 
 // isNoAuthBody reports whether the body is the "no authority"
@@ -166,7 +178,7 @@ func (a *Adapter) Identify(ctx context.Context) (domain.DeviceInfo, error) {
 		info.Provenance = domain.ProvenanceAbsent
 		return info, fmt.Errorf("%w: call Adapter.Login(ctx, user, password) first", domain.ErrCaptureMissing)
 	}
-	body, _, err := a.authedFetchWithFallback(ctx, statusPath)
+	body, err := a.authedFetchWithFallback(ctx, statusPath)
 	if err != nil {
 		info.Provenance = domain.ProvenanceAbsent
 		return info, err
@@ -183,7 +195,7 @@ func (a *Adapter) Status(ctx context.Context) (domain.RouterStatus, error) {
 	if a.session == nil {
 		return domain.RouterStatus{}, fmt.Errorf("%w: call Adapter.Login(ctx, user, password) first", domain.ErrCaptureMissing)
 	}
-	body, _, err := a.authedFetchWithFallback(ctx, statusPath)
+	body, err := a.authedFetchWithFallback(ctx, statusPath)
 	if err != nil {
 		return domain.RouterStatus{}, err
 	}
@@ -210,8 +222,7 @@ func (a *Adapter) fetchWithAuth(ctx context.Context, op string) ([]byte, error) 
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		rawURL = "http://" + rawURL
 	}
-	body, _, err := a.transport.GetWithBasicAuthAndReferer(ctx, rawURL, a.session.referer, a.session.user, a.session.password)
-	return body, err
+	return observationBody(a.transport.GetWithBasicAuthAndReferer(ctx, rawURL, a.session.referer, a.session.user, a.session.password))
 }
 
 // FetchWirelessSecurity fetches the wireless-security page and

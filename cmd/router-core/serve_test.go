@@ -32,6 +32,11 @@ type wr841nServerForServe struct {
 
 func newWR841NForServe(t *testing.T, user, pass string) *wr841nServerForServe {
 	t.Helper()
+	return newWR841NForServeWithStatus(t, user, pass, http.StatusOK)
+}
+
+func newWR841NForServeWithStatus(t *testing.T, user, pass string, pageStatus int) *wr841nServerForServe {
+	t.Helper()
 	authValue := base64.StdEncoding.EncodeToString([]byte(user + ":" + pass))
 	expected := "Basic " + authValue
 
@@ -41,6 +46,7 @@ func newWR841NForServe(t *testing.T, user, pass string) *wr841nServerForServe {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		w.WriteHeader(pageStatus)
 		_, _ = io.WriteString(w, `<script>var wlanPara = new Array(8,0,3,"33",0,0,0,1800,0,"<TEST_PSK>"); var ssidList = new Array("test-network");</script>`)
 	})
 	mux.HandleFunc("/userRpm/AssignedIpAddrListRpm.htm", func(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +55,7 @@ func newWR841NForServe(t *testing.T, user, pass string) *wr841nServerForServe {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(pageStatus)
 		_, _ = io.WriteString(w, `<html><body><script>var DHCPDynList = new Array("omarchy", "00:11:22:33:44:55", "192.168.1.100", "01:24:35", 0, 0); var DHCPDynPara = new Array(1, 4, 0, 0);</script></body></html>`)
 	})
 	mux.HandleFunc("/userRpm/StatusRpm.htm", func(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +69,7 @@ func newWR841NForServe(t *testing.T, user, pass string) *wr841nServerForServe {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(pageStatus)
 		_, _ = io.WriteString(w, `<html><body>var statusPara = new Array(1,1,1,1,1,1,"3.15.9 Build 140724 Rel.63227n","WR841N v8 00000000",0,1);</body></html>`)
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -301,6 +309,31 @@ func TestServe_SecurityEndpoints(t *testing.T) {
 					strings.Contains(body, "TEST_PSK") {
 					t.Errorf("wireless data not safely projected: %s", body)
 				}
+			}
+		})
+	}
+}
+
+func TestServe_UpstreamErrorWithReadableObservationBody(t *testing.T) {
+	for _, status := range []int{http.StatusServiceUnavailable, http.StatusNotFound} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			router := newWR841NForServeWithStatus(t, "test-user", "test-password", status)
+			adapter := tplinkwr841v8.New(strings.TrimPrefix(router.server.URL, "http://"), transport.WithTimeout(time.Second))
+			if err := adapter.Login(t.Context(), "test-user", "test-password"); err != nil {
+				t.Fatal(err)
+			}
+			mux := http.NewServeMux()
+			registerRoutes(mux, adapter, nil)
+			for _, path := range []string{"/v0/security/wireless", "/v0/clients", "/v0/device", "/v0/status"} {
+				t.Run(path, func(t *testing.T) {
+					w := httptest.NewRecorder()
+					mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+					got, err := domain.DecodeObservation(w.Body.Bytes())
+					if err != nil || w.Code != http.StatusServiceUnavailable || got.State != domain.Unavailable ||
+						got.Provenance != domain.ProvenanceAbsent || string(got.Data) != "null" {
+						t.Fatalf("HTTP %d %s (%v), want HTTP 503 unavailable with absent provenance and null data", w.Code, w.Body, err)
+					}
+				})
 			}
 		})
 	}
