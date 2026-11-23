@@ -101,7 +101,7 @@ main() {
     echo "  make install-user"
     echo ""
     echo "If you are a user, set GAVETERO_VERSION to a published release:"
-    echo "  GAVETERO_VERSION=v0.1.0-alpha.1 curl -sSf .../install.sh | sh"
+    echo "  curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/main/install.sh | GAVETERO_VERSION=v0.1.0-alpha.1 bash"
     exit 1
   fi
 
