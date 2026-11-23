@@ -29,7 +29,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Quiarom/router-core/cmd/gavetero/cmd/sidecars"
+	"github.com/Quiarom/gavetero/cmd/gavetero/cmd/sidecars"
 	"github.com/spf13/cobra"
 )
 

@@ -1,4 +1,4 @@
-module github.com/Quiarom/router-core
+module github.com/Quiarom/gavetero
 
 go 1.25.0
 

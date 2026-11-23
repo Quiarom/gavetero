@@ -3,7 +3,7 @@ package tplinkwr841v8
 import (
 	"strings"
 
-	"github.com/Quiarom/router-core/internal/domain"
+	"github.com/Quiarom/gavetero/internal/domain"
 )
 
 func IsLoginPage(html []byte) bool {

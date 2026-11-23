@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Quiarom/router-core/internal/adapters/tplinkwr841v8"
-	"github.com/Quiarom/router-core/internal/transport"
+	"github.com/Quiarom/gavetero/internal/adapters/tplinkwr841v8"
+	"github.com/Quiarom/gavetero/internal/transport"
 )
 
 // wr841nServerForServe emulates the WR841N v8.4 firmware for the

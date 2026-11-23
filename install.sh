@@ -3,7 +3,7 @@
 # install.sh - user-facing installer for Gavetero.
 #
 # Usage:
-#   curl -sSf https://raw.githubusercontent.com/Quiarom/router-core/integration/gavetero/install.sh | sh
+#   curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/main/install.sh | sh
 #
 # Environment variables (set ONE of these):
 #   GAVETERO_VERSION=v0.1.0-alpha.1   - install that release tag
@@ -23,7 +23,7 @@
 
 set -euo pipefail
 
-REPO="Quiarom/router-core"
+REPO="Quiarom/gavetero"
 BIN="gavetero"
 DEST="${HOME}/.local/bin"
 
@@ -75,7 +75,7 @@ main() {
     echo ""
     echo "This script does not support your platform. Build from source instead:"
     echo "  git clone https://github.com/${REPO}.git"
-    echo "  cd router-core"
+    echo "  cd gavetero"
     echo "  make install-user"
     exit 1
   fi

@@ -21,7 +21,7 @@
 package main
 
 import (
-	"github.com/Quiarom/router-core/cmd/gavetero/cmd"
+	"github.com/Quiarom/gavetero/cmd/gavetero/cmd"
 )
 
 func main() {

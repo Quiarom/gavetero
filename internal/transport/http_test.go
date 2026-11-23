@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Quiarom/router-core/internal/domain"
+	"github.com/Quiarom/gavetero/internal/domain"
 )
 
 func TestAllowedHost(t *testing.T) {

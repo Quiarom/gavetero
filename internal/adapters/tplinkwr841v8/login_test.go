@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Quiarom/router-core/internal/domain"
+	"github.com/Quiarom/gavetero/internal/domain"
 )
 
 // statusFixture is a sanitized version of the Status page observed

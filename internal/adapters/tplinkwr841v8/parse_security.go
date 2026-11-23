@@ -5,7 +5,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/Quiarom/router-core/internal/domain"
+	"github.com/Quiarom/gavetero/internal/domain"
 )
 
 // All page indices below are UNVERIFIED until sanitized captures are available.

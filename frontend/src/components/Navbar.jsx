@@ -91,7 +91,7 @@ export function Navbar({
 
           {!isDesktop && (
             <a
-              href="https://github.com/Quiarom/router-core"
+              href="https://github.com/Quiarom/gavetero"
               target="_blank"
               rel="noreferrer"
               className="flex h-9 w-9 items-center justify-center border-2 border-neutral-800 bg-neutral-900 text-neutral-300 hover:bg-neutral-800 hover:text-white hover:border-neutral-600 transition-colors"

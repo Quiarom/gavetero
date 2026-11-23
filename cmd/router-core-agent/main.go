@@ -572,7 +572,7 @@ func runLiveOnce(ctx context.Context, opts options, routerClient *routerCoreClie
 		// on api.gmi-serving.com; including them there is harmless
 		// but pointless. Kept for OpenRouter compatibility.
 		if strings.Contains(opts.openrouterURL, "openrouter.ai") {
-			request.Header.Set("HTTP-Referer", "https://github.com/Quiarom/router-core")
+			request.Header.Set("HTTP-Referer", "https://github.com/Quiarom/gavetero")
 			request.Header.Set("X-Title", "router-core")
 		}
 
