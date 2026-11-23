@@ -79,7 +79,7 @@ The user-facing install is one command. No sudo, no Go,
 no system packages:
 
 ```sh
-curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/main/install.sh | sh
+curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/main/install.sh | bash
 ```
 
 This downloads the prebuilt single binary for your platform
