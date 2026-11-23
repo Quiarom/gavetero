@@ -2,25 +2,24 @@
 # on `git tag v*`. See https://goreleaser.com for full schema.
 version: 2
 
-project_name: router-core
+project_name: gavetero
 
 # Dynamic version from the current git tag.
 # Override with --snapshot for nightly builds.
 # The Makefile also builds locally with -ldflags.
 before:
   hooks:
-    - go mod tidy
+    - go mod download
 
 builds:
-  - main: ./cmd/router-core
-    binary: router-core
-    id: router-core
+  - main: ./cmd/gavetero
+    binary: gavetero
+    id: gavetero
     env:
       - CGO_ENABLED=0
     goos:
       - linux
       - darwin
-      - windows
     goarch:
       - amd64
       - arm64
@@ -29,43 +28,23 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X main.version={{ .Version }}
-  - main: ./cmd/router-core-agent
-    binary: router-core-agent
-    id: router-core-agent
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-    goarch:
-      - amd64
-      - arm64
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w
-      - -X main.version={{ .Version }}
-  - main: ./cmd/router-core-learn
-    binary: router-core-learn
-    id: router-core-learn
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-    goarch:
-      - amd64
-      - arm64
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w
-      - X main.version={{ .Version }}
+      - -X github.com/Quiarom/gavetero/cmd/gavetero/cmd.version={{ .Version }}
+    hooks:
+      pre:
+        - cmd: go build -trimpath -ldflags="-s -w -X github.com/Quiarom/gavetero/cmd/router-core/cmd.version={{ .Version }}" -o cmd/gavetero/cmd/sidecars/router-core ./cmd/router-core
+          env:
+            - GOOS={{ .Os }}
+            - GOARCH={{ .Arch }}
+            - CGO_ENABLED=0
+        - cmd: go build -trimpath -ldflags="-s -w -X main.version={{ .Version }}" -o cmd/gavetero/cmd/sidecars/router-core-agent ./cmd/router-core-agent
+          env:
+            - GOOS={{ .Os }}
+            - GOARCH={{ .Arch }}
+            - CGO_ENABLED=0
 
 archives:
   - formats: [tar.gz]
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE
       - README.md
@@ -84,17 +63,17 @@ changelog:
 release:
   github:
     owner: Quiarom
-    name: router-core
+    name: gavetero
   draft: true
   header: |
-    ## router-core {{ .Tag }}
+    ## Gavetero {{ .Tag }}
 
-    [Full changelog](https://github.com/Quiarom/router-core/compare/{{ .PreviousTag }}...{{ .Tag }})
+    [Full changelog](https://github.com/Quiarom/gavetero/compare/{{ .PreviousTag }}...{{ .Tag }})
   footer: |
     ## Install
 
     ```sh
-    go install github.com/Quiarom/router-core/cmd/router-core@{{ .Tag }}
+    curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/main/install.sh | sh
     ```
 
     ## Verify
@@ -104,24 +83,6 @@ release:
     ```
   prerelease: '{{ .Prerelease }}'
   mode: replace
-  draft: true
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
-
-brews:
-  tap:
-    owner: Quiarom
-    name: homebrew-tools
-  commit_author:
-    name: router-core-bot
-    email: bot@router-core.local
-  folder: Formula
-  homepage: "https://github.com/Quiarom/router-core"
-  description: "Local-first control plane for legacy consumer routers"
-  license: "MIT"
-  dependencies:
-    - name: go
-      type: build
-  test: |
-    system "true"
+  version_template: "{{ incpatch .Version }}-next"
