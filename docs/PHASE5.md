@@ -227,8 +227,7 @@ Observed facts
   reports it in the final answer. Wiring the parser is
   outside the Phase 5 scope.
 - The OpenRouter HTTP client in the agent is a minimal POST
-  with no streaming. For the hackathon demo, a non-streaming
-  final answer is sufficient.
+  with no streaming. It returns the final answer without streaming.
 - The four security endpoints (DMZ, UPnP, Forwarding,
   Remote Management) all return 503 because the runtime's
   `Security()` iterates them in order and the first one

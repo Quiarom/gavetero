@@ -53,7 +53,7 @@ export function LandingPage({ onOpenDashboard }) {
         <div className="mx-auto max-w-5xl text-center px-4 sm:px-6">
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400 mb-8">
             <Sparkles className="h-3.5 w-3.5" />
-            <span>Submission for GMI Cloud × MiniMax Week (Track: Reasoning)</span>
+            <span>Evidence-aware router reasoning</span>
           </div>
 
           <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-6xl font-sans">

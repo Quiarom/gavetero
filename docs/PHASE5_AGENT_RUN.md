@@ -134,7 +134,7 @@ final answer as the bottom of the trace.
 
 ## Capturing the trace as a fixture
 
-For the hackathon demo, capture a real run as a fixture so the
+Capture a real run as a fixture so the
 team can replay the trace in CI without an API key:
 
 ```sh

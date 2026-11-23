@@ -32,8 +32,7 @@ both here.
 ## Expected behavior
 
 What the documentation says should happen. Cite the
-section of the README, the ADR, or the HACKATHON_FAQ if
-relevant.
+section of the README, the ADR, or the relevant documentation.
 
 ## Actual behavior
 

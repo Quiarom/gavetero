@@ -4,6 +4,27 @@ This file is a short reference for the MiniMax-Week hackathon
 judges and the router-core author. For full submission rules,
 see <https://www.gmicloud.ai/minimax-week>.
 
+[![MiniMax Week 2026](https://img.shields.io/badge/MiniMax_Week-2026-blue)](https://www.gmicloud.ai/minimax-week)
+
+## Original project scope
+
+The project status was originally presented as "Hackathon Submission".
+The hackathon scope was "Reasoning": an AI agent asks the router for its
+current state and receives a typed, sanitized answer.
+
+The submission comprised the gavetero CLI and the web frontend. The
+functionally complete desktop app was post-submission work. OS keyring
+persistence (`Adapter.SessionFile`) was also deferred beyond the event.
+During the MiniMax-Week window, `main` pointed to the current alpha tip.
+
+The Phase 5 demo used a non-streaming final answer. The demo plan called
+for capturing a real agent run as a fixture so the team could replay
+the trace in CI without an API key; the recipe remains in
+[the agent run guide](../PHASE5_AGENT_RUN.md#capturing-the-trace-as-a-fixture).
+
+The original project brief was named `HACKATHON.md`; the FAQ is now
+maintained here.
+
 ## Eligibility
 
 - Solo or team of up to four.

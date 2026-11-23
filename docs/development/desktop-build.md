@@ -35,6 +35,5 @@ frontend/src-tauri/target/release/bundle/appimage/router-core_0.1.0_amd64.AppIma
 - `.deb` bundle: 19 MB, contains binary + 2 sidecars + .desktop + 4 icons
 - AppImage: not verified in this environment (linuxdeploy plugin issue)
 
-The desktop app is functionally complete but not part of the
-MiniMax-Week submission (the submission is the gavetero CLI
-and the web frontend). The desktop is post-submission work.
+The desktop app is functionally complete. For its original event scope,
+see the [event notes](../hackathon/minimax-week-2026.md#original-project-scope).

@@ -36,8 +36,7 @@ make fmt
 ## Branching model
 
 - `main` is the default branch. It always points to the latest
-  released state (or the current tip of the alpha during the
-  MiniMax-Week window).
+  released state (or the current alpha tip).
 - All work happens on short-lived branches off `main`. Use a
   Conventional Commits-style prefix in the branch name so the
   intent is obvious from `git branch -a`:

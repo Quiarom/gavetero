@@ -31,7 +31,7 @@ export function ConnectionQuality() {
         produced by router-core.
       </p>
       <p className="mb-2">
-        They have been removed from the submission dashboard because they
+        They have been removed from the dashboard because they
         did not come from the physical router, had no provenance, and
         would have visually competed with the four-state capability
         matrix that the model reasons over.

@@ -50,7 +50,7 @@ export function BrutalistCliInput({ onQuerySuccess }) {
       // The CLI input used to fabricate four hardcoded responses
       // ("PROTEGIDO", "OPTIMIZADO", "ACTIVO", "OK") with invented
       // numbers (95 Mbps, "clean channel", 3 devices). Those numbers
-      // were never produced by router-core. The submission removes
+      // were never produced by router-core. The dashboard removes
       // them entirely and routes the user's question through the
       // real askAssistant call. If the agent cannot verify the user's
       // question yet, the agent says so itself; that is the
