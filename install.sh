@@ -3,7 +3,7 @@
 # install.sh - user-facing installer for Gavetero.
 #
 # Usage:
-#   curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/main/install.sh | sh
+#   curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/main/install.sh | bash
 #
 # Environment variables (set ONE of these):
 #   GAVETERO_VERSION=v0.1.0-alpha.1   - install that release tag
