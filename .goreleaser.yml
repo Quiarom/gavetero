@@ -76,11 +76,6 @@ release:
     curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/main/install.sh | sh
     ```
 
-    ## Verify
-
-    ```sh
-    goreleaser verify
-    ```
   prerelease: '{{ .Prerelease }}'
   mode: replace
 
