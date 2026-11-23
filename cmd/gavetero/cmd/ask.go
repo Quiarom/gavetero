@@ -118,7 +118,7 @@ Resolution order for the API key (GMI):
 	cmd.Flags().StringVar(&model, "model", defaultModel,
 		"primary model identifier")
 	cmd.Flags().BoolVar(&live, "live", false,
-		"connect to a real router (default uses the embedded mock fixture)")
+		"connect to a real router (default uses mock fixture files)")
 	cmd.Flags().StringVar(&host, "host", "",
 		"router address for --live mode (e.g. 192.168.0.1)")
 	cmd.Flags().StringVar(&routerUser, "router-user", "admin",

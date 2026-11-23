@@ -2,8 +2,8 @@
 // as a sidecar and queries its HTTP API, formatting the result
 // for human or machine consumption.
 //
-// The default mock mode uses the embedded fixture (TL-WR841N/ND
-// v8.4 on firmware 3.15.9) and does not touch the network.
+// The default mock mode uses synthetic fixture files from the
+// working directory and does not contact a router.
 // With --live --host X, the sidecar talks to a real router at
 // X (default port 80). The same HTTP API exposes the router's
 // observations to gavetero inspect.
@@ -52,9 +52,9 @@ func newInspectCmd() *cobra.Command {
 		Short: "Show the current router observations",
 		Long: `Run router-core as a sidecar and query its HTTP API.
 
-By default, the sidecar runs in mock mode using the embedded
-fixture (TP-Link TL-WR841N/ND v8.4 on firmware 3.15.9). No
-network access required.
+By default, the sidecar runs in mock mode and reads synthetic
+fixture files from the working directory. The fixture is not
+embedded; missing files yield absent observations.
 
 With --live --host X, the sidecar talks to a real router at
 address X (default port 80). Use --router-user and
@@ -85,7 +85,7 @@ uses: verified, absent, unsupported_or_unverified, unavailable.`,
 	cmd.Flags().StringVar(&output, "output", "human",
 		"output format: human, json, jsonl")
 	cmd.Flags().BoolVar(&live, "live", false,
-		"connect to a real router (default uses the embedded mock fixture)")
+		"connect to a real router (default uses mock fixture files)")
 	cmd.Flags().StringVar(&host, "host", "",
 		"router address for --live mode (e.g. 192.168.0.1)")
 	cmd.Flags().StringVar(&routerUser, "router-user", "admin",
@@ -106,7 +106,7 @@ func runInspect(stdout, stderr io.Writer, opts inspectOptions) error {
 
 	// Decide the sidecar mode. Live mode: the sidecar binds to a
 	// loopback port and proxies to the real router at opts.Host.
-	// Mock mode (default): the sidecar uses the embedded fixture.
+	// Mock mode (default): the sidecar reads fixture files.
 	var sidecarArgs []string
 	var routerURL string
 	if opts.Live {
@@ -215,7 +215,7 @@ func inspectSource(opts inspectOptions) string {
 	if opts.Live {
 		return "live router at " + opts.Host
 	}
-	return "fixture (mock mode)"
+	return "mock mode (fixture files)"
 }
 
 func inspectMode(opts inspectOptions) string {
@@ -234,7 +234,7 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 			return fmt.Errorf("decode %s data: %w", name, err)
 		}
 	}
-	modeLabel := "mock (fixture-backed, no network)"
+	modeLabel := "mock (fixture files, no router connection)"
 	if opts.Live {
 		modeLabel = "live (router at " + opts.Host + ")"
 	}

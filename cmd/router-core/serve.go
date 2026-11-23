@@ -287,10 +287,10 @@ func observed(reason string, source domain.Provenance, data any) domain.Observat
 	return observation(domain.Verified, reason, source, data)
 }
 
-func observationError(err error, name string, source domain.Provenance) domain.Observation[any] {
+func observationError(err error, name string) domain.Observation[any] {
 	switch {
 	case errors.Is(err, domain.ErrObservationAbsent):
-		return observation(domain.Absent, name+" was not present in the source", source, nil)
+		return observation(domain.Absent, name+" was not present in the source", domain.ProvenanceAbsent, nil)
 	case errors.Is(err, domain.ErrUnverifiedEndpoint):
 		return observation(domain.UnsupportedOrUnverified, name+" endpoint has no verified recipe", domain.ProvenanceAbsent, nil)
 	case errors.Is(err, domain.ErrCaptureMissing):
@@ -304,13 +304,13 @@ func deviceReader(adapter domain.RouterAdapter) observationReader {
 	return func(ctx context.Context) domain.Observation[any] {
 		info, err := adapter.Identify(ctx)
 		if err != nil {
-			return observationError(err, "device identity", adapterSource(adapter))
+			return observationError(err, "device identity")
 		}
 		if info.FirmwareVersion.Empty() && info.HardwareVersion.Empty() && !info.Authenticated.Known() {
-			if info.Provenance == domain.ProvenanceFixture {
+			if _, mock := adapter.(*fixture.Adapter); mock {
 				return observation(domain.Absent, "device identity was not present in the fixture", info.Provenance, nil)
 			}
-			return observationError(domain.ErrUnexpectedResponse, "device identity", domain.ProvenanceAbsent)
+			return observationError(domain.ErrUnexpectedResponse, "device identity")
 		}
 		return observed("read device identity", info.Provenance, info)
 	}
@@ -320,35 +320,32 @@ func statusReader(adapter domain.RouterAdapter) observationReader {
 	return func(ctx context.Context) domain.Observation[any] {
 		status, err := adapter.Status(ctx)
 		if err != nil {
-			return observationError(err, "router status", adapterSource(adapter))
+			return observationError(err, "router status")
 		}
 		if !status.Reachable.Known() && !status.UptimeSecs.Valid && (status.WANStatus == "" || status.WANStatus == domain.WANUnknown) {
-			return observation(domain.Absent, "no router status fields were observed", adapterSource(adapter), nil)
+			source := status.Provenance
+			if source == "" {
+				source = domain.ProvenanceAbsent
+			}
+			return observation(domain.Absent, "no router status fields were observed", source, nil)
 		}
 		return observed("read router status", status.Provenance, status)
 	}
-}
-
-func adapterSource(adapter domain.RouterAdapter) domain.Provenance {
-	if _, ok := adapter.(*fixture.Adapter); ok {
-		return domain.ProvenanceFixture
-	}
-	return domain.ProvenanceAbsent
 }
 
 func clientsReader(adapter domain.RouterAdapter) observationReader {
 	return func(ctx context.Context) domain.Observation[any] {
 		clients, err := adapter.Clients(ctx)
 		if err != nil {
-			return observationError(err, "DHCP lease list", adapterSource(adapter))
+			return observationError(err, "DHCP lease list")
 		}
 		if len(clients) == 0 {
-			source := domain.ProvenanceAbsent
-			if clients != nil {
-				source = domain.ProvenanceObserved
-				if adapterSource(adapter) == domain.ProvenanceFixture {
-					source = domain.ProvenanceFixture
-				}
+			if clients == nil {
+				return observation(domain.Absent, "no DHCP lease list was observed", domain.ProvenanceAbsent, nil)
+			}
+			source := domain.ProvenanceObserved
+			if _, mock := adapter.(*fixture.Adapter); mock {
+				source = domain.ProvenanceFixture
 			}
 			return observation(domain.Absent, "no DHCP lease rows were observed", source, []domain.Client{})
 		}
@@ -364,7 +361,7 @@ func securityReader(adapter domain.RouterAdapter, name string) observationReader
 		}
 		state, err := sc.SecurityCapability(ctx, name)
 		if err != nil {
-			return observationError(err, name, adapterSource(adapter))
+			return observationError(err, name)
 		}
 		var hasData bool
 		switch name {

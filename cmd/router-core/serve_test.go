@@ -8,10 +8,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Quiarom/gavetero/internal/adapters/fixture"
 	"github.com/Quiarom/gavetero/internal/adapters/tplinkwr841v8"
 	"github.com/Quiarom/gavetero/internal/domain"
 	"github.com/Quiarom/gavetero/internal/transport"
@@ -332,6 +335,30 @@ func assertObservation(t *testing.T, handler http.HandlerFunc, want domain.Obser
 		t.Fatalf("HTTP %d %s (%v), want HTTP %d %s", w.Code, w.Body.String(), err, status, want)
 	}
 	return got
+}
+
+func TestServe_FixtureProvenance(t *testing.T) {
+	dir := t.TempDir()
+	mux := http.NewServeMux()
+	registerRoutes(mux, fixture.New(dir), nil)
+	read := func(name string, state domain.ObservationState, source domain.Provenance, data string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v0/"+name, nil))
+		result, err := domain.DecodeObservation(w.Body.Bytes())
+		if err != nil || w.Code != http.StatusOK || result.State != state || result.Provenance != source || (data != "" && string(result.Data) != data) {
+			t.Fatalf("%s: HTTP %d %s (%v)", name, w.Code, w.Body.String(), err)
+		}
+	}
+	for _, name := range []string{"device", "status", "clients"} {
+		read(name, domain.Absent, domain.ProvenanceAbsent, "null")
+	}
+	read("capabilities", domain.Verified, domain.ProvenanceAbsent, "")
+	if err := os.WriteFile(filepath.Join(dir, "dhcp.html"), []byte(`<script>var DHCPDynList = new Array();</script>`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	read("clients", domain.Absent, domain.ProvenanceFixture, "[]")
+	read("capabilities", domain.Verified, domain.ProvenanceFixture, "")
 }
 
 func TestServe_RejectsNonLoopbackAddr(t *testing.T) {

@@ -22,13 +22,18 @@ is not a machine-readable code.
 | State | What it means | HTTP on a known GET route |
 | --- | --- | --- |
 | `verified` | The named source yielded at least one usable fact. Known `"false"` and numeric zero count as data. Some fields may still be unknown. | 200 |
-| `absent` | No observation was present in the source. This is not proof that the feature is off or that the firmware never implements it. | 200 |
+| `absent` | The source was missing or yielded no observation. This is not proof that the feature is off or that the firmware never implements it. | 200 |
 | `unsupported_or_unverified` | There is no verified support for this observation. Provisional Wi-Fi data may be present, but must not be treated as verified. | 404 without data, 200 with provisional data |
 | `unavailable` | The observation could not be obtained or interpreted (for example, a session, transport or parsing failure). | 503 |
 
 `provenance` is `observed` for a router response, `fixture` for replay, and
-`absent` when there is no recorded source. Verified fixture data confirms only
-what the replay produced; **fixtures are not evidence of current hardware**.
+`absent` when there is no recorded source. Mock mode reads fixture files
+relative to the working directory; they are not embedded. If a fixture file
+is missing, its observation is `absent` with `provenance: "absent"` and
+`data: null`. A file successfully replayed with an empty DHCP lease list
+has `state: "absent"`, `provenance: "fixture"` and `data: []`.
+Verified fixture data confirms only what the replay produced;
+**fixtures are not evidence of current hardware**.
 When no data exists the field is `null`, except an empty DHCP lease list may
 be `[]`. **Not observed does not mean off**; missing fields, `"unknown"`, and
 `null` must not be interpreted as false or zero.
