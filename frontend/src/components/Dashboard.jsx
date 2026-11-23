@@ -95,6 +95,14 @@ function verifiedData(response) {
     : null;
 }
 
+function isIPAddress(value) {
+  if (typeof value !== "string") return false;
+  if (/^(?:0|[1-9]\d{0,2})(?:\.(?:0|[1-9]\d{0,2})){3}$/.test(value)) {
+    return value.split(".").every((octet) => Number(octet) <= 255);
+  }
+  return value.includes(":") && /^[\da-f:.]+$/i.test(value) && URL.canParse(`http://[${value}]/`);
+}
+
 export function DashboardView({ isLive = false, observations = {}, fetchError, loading, refreshData }) {
   const [showAdvancedTelemetry, setShowAdvancedTelemetry] = useState(false);
   const [copiedIp, setCopiedIp] = useState(false);
@@ -130,10 +138,10 @@ export function DashboardView({ isLive = false, observations = {}, fetchError, l
     }
   }
 
+  const managementAddress = deviceData.managementAddress;
+  const hasManagementIP = isIPAddress(managementAddress);
   const handleCopyIp = () => {
-    const ip = deviceData.managementAddress;
-    if (!ip) return;
-    navigator.clipboard.writeText(ip);
+    navigator.clipboard.writeText(managementAddress);
     setCopiedIp(true);
     setTimeout(() => setCopiedIp(false), 2000);
   };
@@ -197,22 +205,28 @@ export function DashboardView({ isLive = false, observations = {}, fetchError, l
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 pt-1 font-mono text-xs">
           {/* IP con 1-click copy */}
           <div className="border-l-2 border-primary pl-3 space-y-1 bg-black/40 py-1.5 pr-2">
-            <span className="text-neutral-500 uppercase text-xs block font-medium">IP DE GESTIÓN:</span>
-            <button
-              onClick={handleCopyIp}
-              className="flex items-center gap-1.5 font-bold text-white hover:text-primary text-sm transition-colors cursor-pointer text-left w-full group"
-              title="Clic para copiar dirección IP"
-            >
-              <span>{deviceData.managementAddress || "NO DISPONIBLE"}</span>
-              {copiedIp ? (
-                <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-              ) : (
-                <Copy className="h-3.5 w-3.5 text-neutral-500 group-hover:text-primary shrink-0" />
-              )}
-              <span className="text-[10px] text-neutral-500 group-hover:text-primary">
-                {copiedIp ? "¡COPIADA!" : "[COPIAR]"}
-              </span>
-            </button>
+            <span className="text-neutral-500 uppercase text-xs block font-medium">
+              {managementAddress === "fixture" ? "FUENTE DE IDENTIDAD:" : "IP DE GESTIÓN:"}
+            </span>
+            {hasManagementIP ? (
+              <button
+                onClick={handleCopyIp}
+                className="flex items-center gap-1.5 font-bold text-white hover:text-primary text-sm transition-colors cursor-pointer text-left w-full group"
+                title="Clic para copiar dirección IP"
+              >
+                <span>{managementAddress}</span>
+                {copiedIp ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5 text-neutral-500 group-hover:text-primary shrink-0" />
+                )}
+                <span className="text-[10px] text-neutral-500 group-hover:text-primary">
+                  {copiedIp ? "¡COPIADA!" : "[COPIAR]"}
+                </span>
+              </button>
+            ) : (
+              <span className="font-bold text-white text-sm">{managementAddress === "fixture" ? "FIXTURE" : "NO DISPONIBLE"}</span>
+            )}
           </div>
 
           {/* Dispositivos Activos */}

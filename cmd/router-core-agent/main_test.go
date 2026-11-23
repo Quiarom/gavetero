@@ -173,7 +173,8 @@ func TestRunStub_HappyPath(t *testing.T) {
 	defer router.Close()
 
 	c := newRouterCoreClient(router.URL, 2*time.Second)
-	result, err := runStub(context.Background(), c, "minimax/minimax-m3:free",
+	opts := options{openrouterModel: "minimax/minimax-m3:free", openrouterKeyEnv: "CUSTOM_PROVIDER_KEY"}
+	result, err := runStub(context.Background(), c, opts,
 		"Is my Wi-Fi exposed?", nil)
 	if err != nil {
 		t.Fatalf("runStub: %v", err)
@@ -184,11 +185,7 @@ func TestRunStub_HappyPath(t *testing.T) {
 	if result.Model != "minimax/minimax-m3:free" {
 		t.Errorf("Model: got %q", result.Model)
 	}
-	// The deterministic stub returns a generic message
-	// asking the operator to set OPENROUTER_API_KEY. It does
-	// not summarise the SSID. The Steps array is what carries
-	// the evidence.
-	if !strings.Contains(result.Answer, "OPENROUTER_API_KEY") {
+	if !strings.Contains(result.Answer, opts.openrouterKeyEnv) {
 		t.Errorf("Answer should explain how to enable live mode: %q", result.Answer)
 	}
 	if !strings.Contains(result.Answer, "MiniMax") {
@@ -199,31 +196,38 @@ func TestRunStub_HappyPath(t *testing.T) {
 	}
 }
 
-// TestExecuteQuestion_StubMode confirms that without a live API
-// key, executeQuestion runs the deterministic stub and does NOT
+// TestExecuteQuestion_StubMode confirms that in dry-run mode,
+// executeQuestion runs the deterministic stub and does NOT
 // preload router observations. The stub generates its own
 // observation steps based on the question. Steps must be >0
 // (the stub fetches at least one observation) but no four
 // automatic preloads happen.
 func TestExecuteQuestion_StubMode(t *testing.T) {
+	t.Setenv("GMI_SERVING_API_KEY", "test-key")
+	t.Setenv("GMI_KEY_ENV", "")
+	opts, err := parseFlags(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	router := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"state":"absent","reason":"no data","provenance":"fixture","data":null}`)
 	}))
 	defer router.Close()
 
-	opts := options{
-		routerCoreURL:    router.URL,
-		openrouterKeyEnv: "OPENROUTER_API_KEY_NONEXISTENT",
-		dryRun:           true,
-		timeout:          2 * time.Second,
-	}
+	opts.routerCoreURL = router.URL
+	opts.dryRun = true
+	opts.timeout = 2 * time.Second
 	result, err := executeQuestion(context.Background(), opts, "Is my Wi-Fi exposed?")
 	if err != nil {
 		t.Fatalf("executeQuestion: %v", err)
 	}
 	if result.Mode != "stub" {
 		t.Errorf("Mode: got %q, want %q", result.Mode, "stub")
+	}
+	if !strings.Contains(result.Answer, "GMI_SERVING_API_KEY") || !strings.Contains(result.Answer, "sin --dry-run") ||
+		strings.Contains(result.Answer, "OPENROUTER_API_KEY") || strings.Contains(result.Answer, "no está configurada") {
+		t.Errorf("Answer should explain how to leave dry-run without claiming the key is missing: %q", result.Answer)
 	}
 	if len(result.Steps) == 0 {
 		t.Errorf("Steps: stub must produce >=1 step (got 0)")

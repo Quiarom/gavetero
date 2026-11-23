@@ -95,9 +95,7 @@ func parseFlags(args []string) (options, error) {
 		// once with this model. Override with GMI_FALLBACK_MODEL
 		// to a different chat-completions model.
 		openrouterFallbackModel: envOrDefault("GMI_FALLBACK_MODEL", "MiniMaxAI/MiniMax-M2.7"),
-		// Default key env var: GMI_SERVING_API_KEY. Falls back to
-		// OPENROUTER_API_KEY for backward compatibility with the
-		// OpenRouter path.
+		// Override the default key variable with GMI_KEY_ENV or --key-env.
 		openrouterKeyEnv: envOrDefault("GMI_KEY_ENV", "GMI_SERVING_API_KEY"),
 		timeout:          45 * time.Second,
 	}
@@ -315,7 +313,7 @@ func executeQuestion(parent context.Context, opts options, question string) (age
 
 	apiKey := strings.TrimSpace(os.Getenv(opts.openrouterKeyEnv))
 	if opts.dryRun || apiKey == "" {
-		return runStub(ctx, routerClient, opts.openrouterModel, question, nil)
+		return runStub(ctx, routerClient, opts, question, nil)
 	}
 	return runLive(ctx, opts, routerClient, apiKey, question)
 }
@@ -664,7 +662,7 @@ func stubSequence(question string) []string {
 	}
 }
 
-func runStub(ctx context.Context, routerClient *routerCoreClient, model, question string, steps []observationStep) (agentResult, error) {
+func runStub(ctx context.Context, routerClient *routerCoreClient, opts options, question string, steps []observationStep) (agentResult, error) {
 	sequence := stubSequence(question)
 	for _, name := range sequence {
 		observed, err := routerClient.get(ctx, "/v0/security/"+name)
@@ -674,8 +672,7 @@ func runStub(ctx context.Context, routerClient *routerCoreClient, model, questio
 		steps = append(steps, stepFromObservation("get_security", observed))
 	}
 
-	answer := "Modo de demostración: revisé las observaciones disponibles en router-core. " +
-		"La API de MiniMax no está configurada, así que no debo elaborar una conclusión inteligente ni inventar datos. " +
-		"Configura OPENROUTER_API_KEY y vuelve a consultar para obtener el análisis de MiniMax M3."
-	return agentResult{Answer: answer, Model: model, Mode: "stub", Steps: steps}, nil
+	answer := fmt.Sprintf("Modo de demostración: revisé las observaciones disponibles en router-core sin llamar a MiniMax. "+
+		"Para obtener un análisis de MiniMax M3, configura %s y vuelve a consultar sin --dry-run.", opts.openrouterKeyEnv)
+	return agentResult{Answer: answer, Model: opts.openrouterModel, Mode: "stub", Steps: steps}, nil
 }

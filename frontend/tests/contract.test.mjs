@@ -135,6 +135,23 @@ describe("honest dashboard observations", () => {
   const dashboard = (observations, isLive = true) =>
     renderToStaticMarkup(createElement(DashboardView, { observations, isLive }));
 
+  test("the dashboard labels fixture identity and only offers copy for IP literals", () => {
+    const identity = (managementAddress, provenance = "observed") =>
+      dashboard({ device: response(200, "verified", provenance, { authenticated: "true", managementAddress }) });
+    const fixture = identity("fixture", "fixture");
+    assert.match(fixture, /FUENTE DE IDENTIDAD:/);
+    assert.match(fixture, />FIXTURE</);
+    assert.doesNotMatch(fixture, /IP DE GESTIÓN:|\[COPIAR\]/);
+    for (const address of ["", "router.local", "999.0.0.1", "127.1", "192.168.1.1:80"]) {
+      assert.doesNotMatch(identity(address), /\[COPIAR\]/);
+    }
+    for (const address of ["192.168.1.1", "::1"]) {
+      const html = identity(address);
+      assert.ok(html.includes(address));
+      assert.match(html, /\[COPIAR\]/);
+    }
+  });
+
   test("DHCP 503 and a missing lease source do not render as an observed empty list", () => {
     for (const clients of [
       response(503, "unavailable", "absent", null),
