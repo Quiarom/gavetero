@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +22,7 @@ func TestRouterCoreClientGet_HappyPath(t *testing.T) {
 			t.Errorf("method: got %s, want GET", r.Method)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"vendor":"TP-Link","model":"TL-WR841N/ND"}`)
+		_, _ = io.WriteString(w, `{"state":"verified","reason":"identity read","provenance":"fixture","data":{"vendor":"TP-Link","model":"TL-WR841N/ND"}}`)
 	}))
 	defer server.Close()
 
@@ -46,7 +47,7 @@ func TestRouterCoreClientGet_HappyPath(t *testing.T) {
 func TestRouterCoreClientGet_404(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = io.WriteString(w, `{"state":"absent"}`)
+		_, _ = io.WriteString(w, `{"state":"unsupported_or_unverified","reason":"no recipe","provenance":"absent","data":null}`)
 	}))
 	defer server.Close()
 	c := newRouterCoreClient(server.URL, 2*time.Second)
@@ -57,7 +58,7 @@ func TestRouterCoreClientGet_404(t *testing.T) {
 	if got.Status != http.StatusNotFound {
 		t.Errorf("Status: got %d, want 404", got.Status)
 	}
-	if !bytes.Contains(got.Body, []byte("absent")) {
+	if got.Envelope.State != "unsupported_or_unverified" {
 		t.Errorf("Body: %q", string(got.Body))
 	}
 }
@@ -74,8 +75,51 @@ func TestRouterCoreClientGet_InvalidJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on non-JSON body")
 	}
-	if !strings.Contains(err.Error(), "no es JSON") {
+	if !strings.Contains(err.Error(), "decode observation") {
 		t.Errorf("error message: %q", err.Error())
+	}
+}
+
+func TestToolObservationStates(t *testing.T) {
+	for _, tool := range canonicalTools {
+		for _, tc := range []struct {
+			status int
+			state  string
+			data   string
+			valid  bool
+		}{
+			{200, "verified", `{"enabled":false}`, true},
+			{200, "absent", "null", true},
+			{404, "unsupported_or_unverified", "null", true},
+			{503, "unavailable", "null", true},
+			{200, "verified", "null", false},
+			{200, "verified", "[]", false},
+			{200, "verified", "{}", false},
+			{200, "unverified", "null", false},
+		} {
+			t.Run(tool.Name+"/"+tc.state+"/"+tc.data, func(t *testing.T) {
+				body := fmt.Sprintf(`{"state":%q,"reason":"test evidence","provenance":"fixture","data":%s}`, tc.state, tc.data)
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path != tool.Path || r.Method != http.MethodGet {
+						t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					}
+					w.WriteHeader(tc.status)
+					_, _ = io.WriteString(w, body)
+				}))
+				defer srv.Close()
+				path, err := resolveToolPath(tool.Name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				result, err := newRouterCoreClient(srv.URL, time.Second).get(t.Context(), path)
+				if (err == nil) != tc.valid {
+					t.Fatalf("state %s unexpected error: %v", tc.state, err)
+				}
+				if tc.valid && (string(result.Envelope.State) != tc.state || string(stepFromObservation(tool.Name, result).Result) != body) {
+					t.Fatalf("tool result differed from HTTP envelope: %+v", result)
+				}
+			})
+		}
 	}
 }
 
@@ -116,14 +160,14 @@ func TestRunStub_HappyPath(t *testing.T) {
 		switch r.URL.Path {
 		case "/v0/device", "/v0/status", "/v0/clients", "/v0/capabilities":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"state":"ok","vendor":"TP-Link"}`)
+			_, _ = io.WriteString(w, `{"state":"verified","reason":"identity read","provenance":"fixture","data":{"vendor":"TP-Link"}}`)
 		case "/v0/security/wireless":
-			_, _ = io.WriteString(w, `{"state":"verified","result":{"SSID":"TP-LINK_CBEC16"}}`)
+			_, _ = io.WriteString(w, `{"state":"unsupported_or_unverified","reason":"only historical evidence on 3.15.9","provenance":"observed","data":{"ssid":"demo"}}`)
 		case "/v0/security/wps":
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = io.WriteString(w, `{"state":"absent"}`)
+			_, _ = io.WriteString(w, `{"state":"absent","reason":"WPS not seen","provenance":"observed","data":null}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"state":"unsupported_or_unverified","reason":"no recipe","provenance":"absent","data":null}`)
 		}
 	}))
 	defer router.Close()
@@ -164,7 +208,7 @@ func TestRunStub_HappyPath(t *testing.T) {
 func TestExecuteQuestion_StubMode(t *testing.T) {
 	router := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"state":"ok"}`)
+		_, _ = io.WriteString(w, `{"state":"absent","reason":"no data","provenance":"fixture","data":null}`)
 	}))
 	defer router.Close()
 
@@ -216,8 +260,7 @@ func TestExecuteQuestion_RouterUnreachable(t *testing.T) {
 func TestRunLive_HappyPath(t *testing.T) {
 	router := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v0/security/wps" {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = io.WriteString(w, `{"state":"absent","reason":"WPS endpoint not present"}`)
+			_, _ = io.WriteString(w, `{"state":"absent","reason":"WPS endpoint not present","provenance":"observed","data":null}`)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -256,6 +299,10 @@ func TestRunLive_HappyPath(t *testing.T) {
 			}`)
 			return
 		}
+		if last := req.Messages[len(req.Messages)-1]; last.Role != "tool" ||
+			last.Content != `{"state":"absent","reason":"WPS endpoint not present","provenance":"observed","data":null}` {
+			t.Errorf("model tool message dropped envelope: %+v", last)
+		}
 		_, _ = io.WriteString(w, `{
 			"choices":[{"message":{
 				"role":"assistant",
@@ -284,6 +331,9 @@ func TestRunLive_HappyPath(t *testing.T) {
 	}
 	if !strings.Contains(result.Answer, "absent") {
 		t.Errorf("Answer should reflect the tool result: %q", result.Answer)
+	}
+	if event := result.Events[1]; event.State != "absent" || event.Note != "WPS endpoint not present" {
+		t.Errorf("event differs from observation: %+v", event)
 	}
 	if callCount < 2 {
 		t.Errorf("openrouter should be called at least twice, got %d", callCount)

@@ -21,7 +21,7 @@ const getCapabilityMeta = (key) => {
       return {
         label: "Clientes DHCP",
         path: "/v0/clients",
-        desc: "Equipos activos con asignación de IP y MAC en la red local."
+        desc: "Concesiones DHCP observadas; no representan todos los equipos de la red."
       };
     case "wireless_security":
       return {
@@ -77,11 +77,10 @@ const getStatusBadge = (state) => {
       };
     case "absent":
       return {
-        text: "AUSENTE (404)",
+        text: "AUSENTE",
         className: "border border-neutral-800 bg-neutral-900 text-neutral-500 font-mono text-[11px] font-bold uppercase"
       };
     case "unsupported_or_unverified":
-    case "unverified":
       return {
         text: "POR VERIFICAR",
         className: "border border-amber-500/40 bg-amber-500/10 text-amber-400 font-mono text-[11px] font-bold uppercase"

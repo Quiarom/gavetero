@@ -212,10 +212,9 @@ func runAsk(stdout, stderr io.Writer, opts askOptions) error {
 		_ = routerCmd.Wait()
 	}()
 
-	// Wait for /v0/capabilities.
 	routerClient := &http.Client{Timeout: 2 * time.Second}
 	routerURL := "http://" + routerAddr
-	if err := waitForReady(ctx, routerClient, routerURL+"/v0/capabilities"); err != nil {
+	if err := waitForReady(ctx, routerClient, routerURL+"/healthz"); err != nil {
 		return fmt.Errorf("router-core never became ready at %s: %w", routerURL, err)
 	}
 

@@ -87,27 +87,31 @@ export function Dashboard({ isLive, onWanStatusChange }) {
         ]);
 
       const errors = [];
-      if (deviceResponse.status === 200 && deviceResponse.data?.authenticated === "true") {
-        setLiveDeviceData(deviceResponse.data);
+      const device = deviceResponse.data;
+      const status = statusResponse.data;
+      const clients = clientsResponse.data;
+      const capabilities = capabilitiesResponse.data;
+      if (deviceResponse.status === 200 && device?.state === "verified" && device.data?.authenticated === "true") {
+        setLiveDeviceData(device.data);
       } else {
         setLiveDeviceData(null);
         errors.push(deviceResponse.data?.reason || "No se pudo identificar el router");
       }
 
-      if (statusResponse.status === 200) {
-        setLiveStatusData(statusResponse.data);
-        if (onWanStatusChange && statusResponse.data?.wanStatus) {
-          onWanStatusChange(statusResponse.data.wanStatus);
+      if (statusResponse.status === 200 && status?.state === "verified") {
+        setLiveStatusData(status.data);
+        if (onWanStatusChange && status.data?.wanStatus) {
+          onWanStatusChange(status.data.wanStatus);
         }
       } else {
         setLiveStatusData(null);
         errors.push(statusResponse.data?.reason || "El estado WAN no está disponible");
       }
 
-      if (clientsResponse.status === 200 && Array.isArray(clientsResponse.data?.clients)) {
+      if (clientsResponse.status === 200 && (clients?.state === "verified" || clients?.state === "absent")) {
         setLiveClientsData({
-          ...clientsResponse.data,
-          clients: clientsResponse.data.clients.map((client) => ({
+          ...clients,
+          clients: (clients.data ?? []).map((client) => ({
             ...client,
             name: client.name?.value || client.name || "Dispositivo sin nombre",
             lease: client.leaseTime?.value || client.lease || "No disponible"
@@ -115,11 +119,11 @@ export function Dashboard({ isLive, onWanStatusChange }) {
         });
       } else {
         setLiveClientsData(null);
-        errors.push(clientsResponse.data?.reason || "Los clientes conectados no están disponibles");
+        errors.push(clientsResponse.data?.reason || "Las concesiones DHCP no están disponibles");
       }
 
-      if (capabilitiesResponse.status === 200 && capabilitiesResponse.data?.capabilities) {
-        setLiveCapsData(capabilitiesResponse.data);
+      if (capabilitiesResponse.status === 200 && capabilities?.state === "verified") {
+        setLiveCapsData({ capabilities: capabilities.data });
       } else {
         setLiveCapsData(null);
       }
@@ -231,7 +235,7 @@ export function Dashboard({ isLive, onWanStatusChange }) {
           <div className="border-l-2 border-neutral-800 pl-3 space-y-1 bg-black/40 py-1.5 pr-2">
             <span className="text-neutral-500 uppercase text-xs block font-medium">DISPOSITIVOS:</span>
             <span className="font-bold text-white text-sm block">
-              {clientCount} CONECTADOS
+              {clientCount} CONCESIONES DHCP
             </span>
           </div>
 

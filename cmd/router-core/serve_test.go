@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Quiarom/gavetero/internal/adapters/tplinkwr841v8"
+	"github.com/Quiarom/gavetero/internal/domain"
 	"github.com/Quiarom/gavetero/internal/transport"
 )
 
@@ -32,13 +33,20 @@ func newWR841NForServe(t *testing.T, user, pass string) *wr841nServerForServe {
 	expected := "Basic " + authValue
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/userRpm/WlanSecurityRpm.htm", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.Header.Get("Authorization") != expected || r.Header.Get("Referer") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = io.WriteString(w, `<script>var wlanPara = new Array(8,0,3,"33",0,0,0,1800,0,"<TEST_PSK>"); var ssidList = new Array("test-network");</script>`)
+	})
 	mux.HandleFunc("/userRpm/AssignedIpAddrListRpm.htm", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != expected {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = io.WriteString(w, `<html><body><script>var DHCPDynList = new Array("omarchy", "00:11:22:33:44:55:66", "192.168.1.100", "01:24:35", 0, 0); var DHCPDynPara = new Array(1, 4, 0, 0);</script></body></html>`)
+		_, _ = io.WriteString(w, `<html><body><script>var DHCPDynList = new Array("omarchy", "00:11:22:33:44:55", "192.168.1.100", "01:24:35", 0, 0); var DHCPDynPara = new Array(1, 4, 0, 0);</script></body></html>`)
 	})
 	mux.HandleFunc("/userRpm/StatusRpm.htm", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != expected {
@@ -127,7 +135,7 @@ func TestServe_Device(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body["firmwareVersion"] == nil {
+	if data, ok := body["data"].(map[string]any); !ok || data["firmwareVersion"] == nil || body["state"] != "verified" {
 		t.Errorf("body missing firmwareVersion: %v", body)
 	}
 }
@@ -151,9 +159,7 @@ func TestServe_CapabilitiesReflectVerification(t *testing.T) {
 		t.Fatalf("status: %d want 200", resp.StatusCode)
 	}
 
-	var body struct {
-		Capabilities map[string]string `json:"capabilities"`
-	}
+	var body domain.Observation[map[string]string]
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -161,14 +167,14 @@ func TestServe_CapabilitiesReflectVerification(t *testing.T) {
 		"device":            "verified",
 		"status":            "verified",
 		"clients":           "verified",
-		"wireless_security": "unavailable",
+		"wireless_security": "unsupported_or_unverified",
 		"wps":               "unsupported_or_unverified",
 		"dmz":               "unsupported_or_unverified",
 		"upnp":              "unsupported_or_unverified",
 		"remote_management": "unsupported_or_unverified",
 		"forwarding":        "unsupported_or_unverified",
 	} {
-		if got := body.Capabilities[capability]; got != want {
+		if got := body.Data[capability]; got != want {
 			t.Errorf("%s: got %q want %q", capability, got, want)
 		}
 	}
@@ -195,7 +201,7 @@ func TestServe_Status(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body["reachable"] == nil {
+	if data, ok := body["data"].(map[string]any); !ok || data["reachable"] == nil || body["state"] != "verified" {
 		t.Errorf("body missing reachable: %v", body)
 	}
 }
@@ -229,18 +235,103 @@ func TestServe_SecurityEndpoints(t *testing.T) {
 				t.Fatalf("GET %s: %v", p, err)
 			}
 			defer resp.Body.Close()
-			if resp.StatusCode != 200 && resp.StatusCode != 404 && resp.StatusCode != 503 {
-				t.Errorf("status: %d want 200|404|503", resp.StatusCode)
+			wantStatus := http.StatusNotFound
+			if strings.HasSuffix(p, "/wireless") {
+				wantStatus = http.StatusOK
 			}
-			var body map[string]any
-			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-				t.Fatalf("decode: %v", err)
+			if resp.StatusCode != wantStatus {
+				t.Errorf("status: %d want %d", resp.StatusCode, wantStatus)
 			}
-			if _, ok := body["state"]; !ok {
-				t.Errorf("body missing state field: %v", body)
+			body := readAll(t, resp.Body)
+			result, err := domain.DecodeObservation([]byte(body))
+			if err != nil || result.State != domain.UnsupportedOrUnverified {
+				t.Fatalf("envelope: %s (%v)", body, err)
+			}
+			if wantStatus == http.StatusOK {
+				var wifi map[string]any
+				if err := json.Unmarshal(result.Data, &wifi); err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(result.Reason, "3.15.9") || result.Provenance != domain.ProvenanceObserved ||
+					wifi["securityType"] != "wpa2-psk" || wifi["hasPreSharedKey"] != true || len(wifi) != 7 ||
+					strings.Contains(body, "TEST_PSK") {
+					t.Errorf("wireless data not safely projected: %s", body)
+				}
 			}
 		})
 	}
+}
+
+type observationTestAdapter struct {
+	domain.RouterAdapter
+	clients  []domain.Client
+	security domain.SecurityState
+	err      error
+}
+
+func (a observationTestAdapter) Identify(context.Context) (domain.DeviceInfo, error) {
+	return domain.DeviceInfo{Vendor: "configured adapter", Provenance: domain.ProvenanceObserved}, a.err
+}
+
+func (a observationTestAdapter) Status(context.Context) (domain.RouterStatus, error) {
+	return domain.RouterStatus{}, a.err
+}
+
+func (a observationTestAdapter) Clients(context.Context) ([]domain.Client, error) {
+	return a.clients, a.err
+}
+
+func (a observationTestAdapter) SecurityCapability(context.Context, string) (domain.SecurityState, error) {
+	return a.security, a.err
+}
+
+func TestObservationHandler(t *testing.T) {
+	security := domain.SecurityState{
+		WPSEnabled: domain.False, DMZEnabled: domain.False, ActiveUPnPMappings: domain.SomeInt(0),
+		RemoteManagementEnabled: domain.False, ForwardingRules: domain.SomeInt(0),
+		Provenance: domain.ProvenanceObserved,
+	}
+	for _, name := range []string{"wps", "dmz", "upnp", "remote-management", "forwarding"} {
+		for _, tc := range []struct {
+			name    string
+			adapter observationTestAdapter
+			state   domain.ObservationState
+			status  int
+		}{
+			{"false_or_zero", observationTestAdapter{security: security}, domain.Verified, http.StatusOK},
+			{"empty", observationTestAdapter{}, domain.Absent, http.StatusOK},
+			{"absent", observationTestAdapter{err: domain.ErrObservationAbsent}, domain.Absent, http.StatusOK},
+			{"unsupported", observationTestAdapter{err: domain.ErrUnverifiedEndpoint}, domain.UnsupportedOrUnverified, http.StatusNotFound},
+			{"unavailable", observationTestAdapter{err: domain.ErrUnexpectedResponse}, domain.Unavailable, http.StatusServiceUnavailable},
+		} {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				assertObservation(t, observationHandler(securityReader(tc.adapter, name)), tc.state, tc.status)
+			})
+		}
+	}
+	t.Run("empty clients", func(t *testing.T) {
+		result := assertObservation(t, observationHandler(clientsReader(observationTestAdapter{clients: []domain.Client{}})), domain.Absent, http.StatusOK)
+		if string(result.Data) != "[]" || result.Provenance != domain.ProvenanceObserved {
+			t.Fatalf("unexpected empty lease evidence: %+v", result)
+		}
+	})
+	t.Run("empty device", func(t *testing.T) {
+		assertObservation(t, observationHandler(deviceReader(observationTestAdapter{})), domain.Unavailable, http.StatusServiceUnavailable)
+	})
+	t.Run("empty status", func(t *testing.T) {
+		assertObservation(t, observationHandler(statusReader(observationTestAdapter{})), domain.Absent, http.StatusOK)
+	})
+}
+
+func assertObservation(t *testing.T, handler http.HandlerFunc, want domain.ObservationState, status int) domain.Observation[json.RawMessage] {
+	t.Helper()
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	got, err := domain.DecodeObservation(w.Body.Bytes())
+	if err != nil || w.Code != status || got.State != want {
+		t.Fatalf("HTTP %d %s (%v), want HTTP %d %s", w.Code, w.Body.String(), err, status, want)
+	}
+	return got
 }
 
 func TestServe_RejectsNonLoopbackAddr(t *testing.T) {

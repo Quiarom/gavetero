@@ -45,6 +45,9 @@ func ParseDHCP(html []byte) (DHCPResult, error) {
 			Provenance: domain.ProvenanceObserved,
 		})
 	}
+	if len(result.Clients) == 0 && result.Skipped > 0 {
+		return result, domain.ErrUnexpectedResponse
+	}
 	return result, nil
 }
 

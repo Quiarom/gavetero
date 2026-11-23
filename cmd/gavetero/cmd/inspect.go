@@ -16,8 +16,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/Quiarom/gavetero/cmd/gavetero/cmd/sidecars"
-	"github.com/spf13/cobra"
 	"io"
 	"net"
 	"net/http"
@@ -26,6 +24,10 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Quiarom/gavetero/cmd/gavetero/cmd/sidecars"
+	"github.com/Quiarom/gavetero/internal/domain"
+	"github.com/spf13/cobra"
 )
 
 type inspectOptions struct {
@@ -56,8 +58,7 @@ network access required.
 
 With --live --host X, the sidecar talks to a real router at
 address X (default port 80). Use --router-user and
---router-password-stdin to provide credentials (admin/admin
-is the default for TP-Link WR841N; other routers may differ).
+--router-password-stdin to provide credentials.
 
 The output uses the four-state vocabulary the API surface
 uses: verified, absent, unsupported_or_unverified, unavailable.`,
@@ -67,6 +68,11 @@ uses: verified, absent, unsupported_or_unverified, unavailable.`,
   gvt inspect --output json
   gvt inspect --output jsonl`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			switch output {
+			case "human", "json", "jsonl":
+			default:
+				return fmt.Errorf("unknown inspect output format %q", output)
+			}
 			return runInspect(cmd.OutOrStdout(), cmd.ErrOrStderr(), inspectOptions{
 				Output:              output,
 				Live:                live,
@@ -151,60 +157,58 @@ func runInspect(stdout, stderr io.Writer, opts inspectOptions) error {
 		_ = sidecar.Wait()
 	}()
 
-	// Wait for /v0/capabilities.
-	routerClient := &http.Client{Timeout: 2 * time.Second}
-	if err := waitForReady(ctx, routerClient, routerURL+"/v0/capabilities"); err != nil {
+	routerClient := &http.Client{Timeout: 6 * time.Second}
+	if err := waitForReady(ctx, routerClient, routerURL+"/healthz"); err != nil {
 		return fmt.Errorf("router-core never became ready at %s: %w", routerURL, err)
 	}
+	return inspectObservations(ctx, stdout, routerClient, routerURL, opts)
+}
 
-	caps := map[string]string{}
-	if body, err := getJSON(ctx, routerClient, routerURL+"/v0/capabilities"); err == nil {
-		var wrapper struct {
-			Capabilities map[string]string `json:"capabilities"`
+func inspectObservations(ctx context.Context, stdout io.Writer, client *http.Client, routerURL string, opts inspectOptions) error {
+	observations := make(map[string]domain.Observation[json.RawMessage], 4)
+	var unavailable []string
+	for _, name := range []string{"capabilities", "device", "status", "clients"} {
+		result, err := getObservation(ctx, client, routerURL+"/v0/"+name)
+		if err != nil {
+			return fmt.Errorf("inspect %s: %w", name, err)
 		}
-		_ = json.Unmarshal(body, &wrapper)
-		caps = wrapper.Capabilities
-	}
-	device := map[string]interface{}{}
-	if body, err := getJSON(ctx, routerClient, routerURL+"/v0/device"); err == nil {
-		_ = json.Unmarshal(body, &device)
-	}
-	status := map[string]interface{}{}
-	if body, err := getJSON(ctx, routerClient, routerURL+"/v0/status"); err == nil {
-		_ = json.Unmarshal(body, &status)
-	}
-	clients := []map[string]interface{}{}
-	if body, err := getJSON(ctx, routerClient, routerURL+"/v0/clients"); err == nil {
-		var wrapper struct {
-			Clients []map[string]interface{} `json:"clients"`
+		if result.State == domain.Unavailable {
+			unavailable = append(unavailable, name+": "+result.Reason)
 		}
-		_ = json.Unmarshal(body, &wrapper)
-		clients = wrapper.Clients
+		observations[name] = result
 	}
 
+	var err error
 	switch opts.Output {
 	case "json":
-		return writeJSON(stdout, map[string]any{
+		err = writeJSON(stdout, map[string]any{
 			"router":       inspectSource(opts),
 			"mode":         inspectMode(opts),
-			"capabilities": caps,
-			"device":       device,
-			"status":       status,
-			"clients":      clients,
+			"capabilities": observations["capabilities"],
+			"device":       observations["device"],
+			"status":       observations["status"],
+			"clients":      observations["clients"],
 		})
 	case "jsonl":
-		return renderAskJSONL(stdout, map[string]any{
+		err = renderAskJSONL(stdout, map[string]any{
 			"kind":    "inspect",
 			"source":  inspectSource(opts),
 			"mode":    inspectMode(opts),
-			"router":  device,
-			"status":  status,
-			"clients": clients,
-			"caps":    caps,
+			"router":  observations["device"],
+			"status":  observations["status"],
+			"clients": observations["clients"],
+			"caps":    observations["capabilities"],
 		})
 	default:
-		return renderInspectHuman(stdout, caps, device, status, clients, opts)
+		err = renderInspectHuman(stdout, observations, opts)
 	}
+	if err != nil {
+		return err
+	}
+	if len(unavailable) != 0 {
+		return fmt.Errorf("router observations unavailable: %s", strings.Join(unavailable, "; "))
+	}
+	return nil
 }
 
 func inspectSource(opts inspectOptions) string {
@@ -221,7 +225,15 @@ func inspectMode(opts inspectOptions) string {
 	return "mock"
 }
 
-func renderInspectHuman(stdout io.Writer, caps map[string]string, device, status map[string]interface{}, clients []map[string]interface{}, opts inspectOptions) error {
+func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observation[json.RawMessage], opts inspectOptions) error {
+	var caps map[string]string
+	var device, status map[string]any
+	var clients []map[string]any
+	for name, dest := range map[string]any{"capabilities": &caps, "device": &device, "status": &status, "clients": &clients} {
+		if err := json.Unmarshal(observations[name].Data, dest); err != nil {
+			return fmt.Errorf("decode %s data: %w", name, err)
+		}
+	}
 	modeLabel := "mock (fixture-backed, no network)"
 	if opts.Live {
 		modeLabel = "live (router at " + opts.Host + ")"
@@ -230,6 +242,11 @@ func renderInspectHuman(stdout io.Writer, caps map[string]string, device, status
 	fmt.Fprintln(stdout, "================")
 	fmt.Fprintln(stdout)
 	fmt.Fprintf(stdout, "Mode:  %s\n", modeLabel)
+	fmt.Fprintln(stdout)
+	for _, name := range []string{"device", "status", "clients", "capabilities"} {
+		result := observations[name]
+		fmt.Fprintf(stdout, "%s: %s (%s; %s)\n", name, result.State, result.Reason, result.Provenance)
+	}
 	fmt.Fprintln(stdout)
 	if len(device) > 0 {
 		fmt.Fprintln(stdout, "Device")
@@ -284,7 +301,7 @@ func renderInspectHuman(stdout io.Writer, caps map[string]string, device, status
 		fmt.Fprintln(stdout)
 	}
 	if clients != nil {
-		fmt.Fprintf(stdout, "Clients (%d observed)\n", len(clients))
+		fmt.Fprintf(stdout, "DHCP leases (%d observed)\n", len(clients))
 		fmt.Fprintln(stdout, "---------------------")
 		for _, c := range clients {
 			ip := toString(flattenMapValue(c, "ip"))
@@ -296,9 +313,9 @@ func renderInspectHuman(stdout io.Writer, caps map[string]string, device, status
 	}
 	fmt.Fprintln(stdout, "Legend:")
 	fmt.Fprintln(stdout, "  verified                     adapter read the value")
-	fmt.Fprintln(stdout, "  absent                       firmware does not implement")
-	fmt.Fprintln(stdout, "  unsupported_or_unverified    runtime has no parser")
-	fmt.Fprintln(stdout, "  unavailable                  transport failure")
+	fmt.Fprintln(stdout, "  absent                       source did not yield the observation")
+	fmt.Fprintln(stdout, "  unsupported_or_unverified    support has not been verified")
+	fmt.Fprintln(stdout, "  unavailable                  could not obtain or interpret the observation")
 	return nil
 }
 
@@ -366,17 +383,31 @@ func waitForReady(ctx context.Context, client *http.Client, url string) error {
 	return fmt.Errorf("timeout")
 }
 
-func getJSON(ctx context.Context, client *http.Client, url string) ([]byte, error) {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func getObservation(ctx context.Context, client *http.Client, url string) (domain.Observation[json.RawMessage], error) {
+	var empty domain.Observation[json.RawMessage]
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return empty, err
+	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		return empty, err
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	result, err := domain.DecodeObservation(body)
+	if err != nil {
+		return empty, fmt.Errorf("HTTP %d: %w", resp.StatusCode, err)
+	}
+	if resp.StatusCode != http.StatusOK &&
+		!(resp.StatusCode == http.StatusNotFound && result.State == domain.UnsupportedOrUnverified) &&
+		!(resp.StatusCode == http.StatusServiceUnavailable && result.State == domain.Unavailable) {
+		return empty, fmt.Errorf("unexpected HTTP %d with state %s", resp.StatusCode, result.State)
+	}
+	return result, nil
 }
 
 func findRouterCoreBin() (string, error) {
