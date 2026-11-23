@@ -396,7 +396,7 @@ func wirelessReader(adapter domain.RouterAdapter) observationReader {
 		}
 		wifi, err := reader.FetchWirelessSecurity(ctx)
 		if err != nil {
-			return observation(domain.UnsupportedOrUnverified, history+"; no current data could be read", domain.ProvenanceAbsent, nil)
+			return observationError(err, "Wi-Fi")
 		}
 		data := struct {
 			Enabled         bool             `json:"enabled"`

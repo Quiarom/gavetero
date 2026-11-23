@@ -265,6 +265,40 @@ func TestServe_SecurityEndpoints(t *testing.T) {
 	}
 }
 
+type wirelessTestAdapter struct {
+	observationTestAdapter
+}
+
+func (a wirelessTestAdapter) FetchWirelessSecurity(context.Context) (tplinkwr841v8.WirelessSecurity, error) {
+	return tplinkwr841v8.WirelessSecurity{}, a.err
+}
+
+func TestServe_WirelessReadErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		adapter domain.RouterAdapter
+		state   domain.ObservationState
+		status  int
+	}{
+		{"malformed response", wirelessTestAdapter{observationTestAdapter{err: domain.ErrUnexpectedResponse}}, domain.Unavailable, http.StatusServiceUnavailable},
+		{"timed out", wirelessTestAdapter{observationTestAdapter{err: context.DeadlineExceeded}}, domain.Unavailable, http.StatusServiceUnavailable},
+		{"no verified recipe", wirelessTestAdapter{observationTestAdapter{err: domain.ErrUnverifiedEndpoint}}, domain.UnsupportedOrUnverified, http.StatusNotFound},
+		{"no reader", observationTestAdapter{}, domain.UnsupportedOrUnverified, http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			registerRoutes(mux, tc.adapter, nil)
+			result := assertObservation(t, func(w http.ResponseWriter, r *http.Request) {
+				r.URL.Path = "/v0/security/wireless"
+				mux.ServeHTTP(w, r)
+			}, tc.state, tc.status)
+			if result.Provenance != domain.ProvenanceAbsent || string(result.Data) != "null" {
+				t.Fatalf("unexpected evidence: %+v", result)
+			}
+		})
+	}
+}
+
 type observationTestAdapter struct {
 	domain.RouterAdapter
 	clients  []domain.Client
