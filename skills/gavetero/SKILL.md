@@ -13,7 +13,7 @@ metadata:
 
 Gavetero is a local-first, read-only observation layer for
 consumer routers. It does not change the router. It returns
-typed observations, each with one of four knowledge states:
+typed live observations, each with one of four knowledge states:
 
 - `verified` — the runtime actually read the value
 - `absent` — the firmware does not implement the capability
@@ -23,6 +23,13 @@ typed observations, each with one of four knowledge states:
 Unknown is never silently interpreted as `false` or
 `disabled`. State that remains unverified stays
 unverified.
+
+The default is mock mode: test data, not a real router. Mock JSON includes
+`mode: "mock"` and `provenance: "fixture"`; successful test reads use
+`state: "mock"`, never `verified`. Missing, unsupported, and failed mock
+reads retain their states with the same mock context. Never present mock
+data as evidence about the user's router. To read a real router, use
+`gvt inspect --live --host <router-ip>`.
 
 ## When to use Gavetero
 

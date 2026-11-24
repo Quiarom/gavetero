@@ -13,7 +13,7 @@ func TestRunDoctor(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Installation checks only; no router observations.",
-		"synthetic demo data, not a real router",
+		"mock test data, not a real router",
 		"not a check of your router",
 	} {
 		if !strings.Contains(out.String(), want) {

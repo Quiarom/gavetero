@@ -72,14 +72,14 @@ func TestRenderInspectHuman(t *testing.T) {
 					t.Fatal(err)
 				}
 				if live {
-					if !strings.Contains(out.String(), "device: "+string(state)+" (test reason; fixture)") || strings.Contains(out.String(), "synthetic") {
+					if !strings.Contains(out.String(), "device: "+string(state)+" (test reason; fixture)") || strings.Contains(out.String(), "Read your real router:") {
 						t.Fatalf("live presentation changed: %s", out.String())
 					}
 					return
 				}
-				label := "synthetic/" + string(state)
+				label := "mock/" + string(state)
 				if state == domain.Verified {
-					label = "synthetic"
+					label = "mock"
 				}
 				for _, name := range []string{"device", "status", "clients"} {
 					if !strings.Contains(out.String(), name+": "+label+" (test reason; fixture)") {
@@ -87,11 +87,11 @@ func TestRenderInspectHuman(t *testing.T) {
 					}
 				}
 				for _, key := range []string{"device", "extra"} {
-					if !strings.Contains(out.String(), fmt.Sprintf("  %-22s synthetic\n", key)) {
+					if !strings.Contains(out.String(), fmt.Sprintf("  %-22s mock\n", key)) {
 						t.Fatalf("unlabeled demo capability: %s", out.String())
 					}
 				}
-				if !strings.Contains(out.String(), "synthetic demo data, not a real router") || strings.Contains(out.String(), ": verified") {
+				if !strings.Contains(out.String(), "mock (test data, not a real router)") || strings.Contains(out.String(), ": verified") || !strings.HasSuffix(out.String(), "Read your real router: gvt inspect --live --host <router-ip>\n") {
 					t.Fatalf("misleading demo output: %s", out.String())
 				}
 			})
@@ -108,4 +108,36 @@ func TestRenderInspectHuman(t *testing.T) {
 			t.Fatalf("expected decode error: %v", err)
 		}
 	})
+}
+
+func TestInspectObservations_MockJSON(t *testing.T) {
+	for _, format := range []string{"json", "jsonl"} {
+		for _, live := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/live=%t", format, live), func(t *testing.T) {
+				state, provenance, mode := "mock", "fixture", `,"mode":"mock"`
+				if live {
+					state, provenance, mode = "verified", "observed", ""
+				}
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					fmt.Fprintf(w, `{"state":%q,"reason":"read","provenance":%q,"data":{"present":true}%s}`, state, provenance, mode)
+				}))
+				defer srv.Close()
+				var out bytes.Buffer
+				if err := inspectObservations(t.Context(), &out, srv.Client(), srv.URL, inspectOptions{Output: format, Live: live, Host: "192.0.2.1"}); err != nil {
+					t.Fatal(err)
+				}
+				var result map[string]any
+				if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+					t.Fatal(err)
+				}
+				if live {
+					if result["mode"] != "live" || result["provenance"] != nil || strings.Contains(out.String(), `"mock"`) {
+						t.Fatalf("live context changed: %s", out.String())
+					}
+				} else if result["mode"] != "mock" || result["provenance"] != "fixture" || strings.Contains(out.String(), `"verified"`) {
+					t.Fatalf("incorrect mock context: %s", out.String())
+				}
+			})
+		}
+	}
 }

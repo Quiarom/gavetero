@@ -88,7 +88,7 @@ func runDoctor(stdout, stderr io.Writer) error {
 
 	fmt.Fprintln(stdout, "Gavetero doctor")
 	fmt.Fprintln(stdout, "==============")
-	fmt.Fprintln(stdout, "Installation checks only; no router observations. Default inspect uses synthetic demo data, not a real router.")
+	fmt.Fprintln(stdout, "Installation checks only; no router observations. Default inspect uses mock test data, not a real router.")
 	fmt.Fprintln(stdout, "")
 	for _, c := range checks {
 		c.print(stdout)

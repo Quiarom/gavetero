@@ -2,7 +2,7 @@
 // as a sidecar and queries its HTTP API, formatting the result
 // for human or machine consumption.
 //
-// The default mock mode uses embedded synthetic fixture files
+// The default mock mode uses embedded mock test data
 // and does not contact a router.
 // With --live --host X, the sidecar talks to a real router at
 // X (default port 80). The same HTTP API exposes the router's
@@ -53,7 +53,7 @@ func newInspectCmd() *cobra.Command {
 		Long: `Run router-core as a sidecar and query its HTTP API.
 
 By default, the sidecar runs in mock mode and reads embedded
-synthetic fixture files. No checkout or router is required.
+mock test data. No checkout or router is required.
 
 With --live --host X, the sidecar talks to a real router at
 address X (default port 80). Use --router-user and
@@ -178,18 +178,19 @@ func inspectObservations(ctx context.Context, stdout io.Writer, client *http.Cli
 	}
 
 	var err error
+	var result map[string]any
 	switch opts.Output {
 	case "json":
-		err = writeJSON(stdout, map[string]any{
+		result = map[string]any{
 			"router":       inspectSource(opts),
 			"mode":         inspectMode(opts),
 			"capabilities": observations["capabilities"],
 			"device":       observations["device"],
 			"status":       observations["status"],
 			"clients":      observations["clients"],
-		})
+		}
 	case "jsonl":
-		err = renderAskJSONL(stdout, map[string]any{
+		result = map[string]any{
 			"kind":    "inspect",
 			"source":  inspectSource(opts),
 			"mode":    inspectMode(opts),
@@ -197,9 +198,19 @@ func inspectObservations(ctx context.Context, stdout io.Writer, client *http.Cli
 			"status":  observations["status"],
 			"clients": observations["clients"],
 			"caps":    observations["capabilities"],
-		})
+		}
 	default:
 		err = renderInspectHuman(stdout, observations, opts)
+	}
+	if result != nil {
+		if !opts.Live {
+			result["provenance"] = domain.ProvenanceFixture
+		}
+		if opts.Output == "jsonl" {
+			err = renderAskJSONL(stdout, result)
+		} else {
+			err = writeJSON(stdout, result)
+		}
 	}
 	if err != nil {
 		return err
@@ -214,7 +225,7 @@ func inspectSource(opts inspectOptions) string {
 	if opts.Live {
 		return "live router at " + opts.Host
 	}
-	return "mock mode (synthetic demo data, not a real router)"
+	return "mock mode (test data, not a real router)"
 }
 
 func inspectMode(opts inspectOptions) string {
@@ -233,7 +244,7 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 			return fmt.Errorf("decode %s data: %w", name, err)
 		}
 	}
-	modeLabel := "mock (synthetic demo data, not a real router)"
+	modeLabel := "mock (test data, not a real router)"
 	if opts.Live {
 		modeLabel = "live (router at " + opts.Host + ")"
 	}
@@ -312,10 +323,12 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 	}
 	fmt.Fprintln(stdout, "Legend:")
 	if !opts.Live {
-		fmt.Fprintln(stdout, "  synthetic                           demo data, not a real router")
-		fmt.Fprintln(stdout, "  synthetic/absent                    demo source did not yield the observation")
-		fmt.Fprintln(stdout, "  synthetic/unsupported_or_unverified support has not been verified")
-		fmt.Fprintln(stdout, "  synthetic/unavailable               could not obtain or interpret the demo observation")
+		fmt.Fprintln(stdout, "  mock                           test data, not a real router")
+		fmt.Fprintln(stdout, "  mock/absent                    test data did not yield the observation")
+		fmt.Fprintln(stdout, "  mock/unsupported_or_unverified support has not been verified")
+		fmt.Fprintln(stdout, "  mock/unavailable               could not obtain or interpret the test data")
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, "Read your real router: gvt inspect --live --host <router-ip>")
 		return nil
 	}
 	fmt.Fprintln(stdout, "  verified                     adapter read the value")
@@ -329,10 +342,10 @@ func inspectStateLabel(state string, opts inspectOptions) string {
 	if opts.Live {
 		return state
 	}
-	if state == string(domain.Verified) {
-		return "synthetic"
+	if state == string(domain.Verified) || state == string(domain.Mock) {
+		return "mock"
 	}
-	return "synthetic/" + state
+	return "mock/" + state
 }
 
 // flattenMapValue returns the inner string of an Untrusted

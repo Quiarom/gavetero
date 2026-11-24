@@ -43,13 +43,13 @@ the agent sidecar. The CLI spawns them as needed:
           │
    ┌──────┴───────┐
    │  TP-Link    │   ← real router on the LAN
-   │  WR841N     │      OR the synthetic fixture files
+   │  WR841N     │      OR the mock test data
    │  or other   │      for first-time use
    └─────────────┘
 ```
 
 The runtime reads the router's web UI over HTTP, parses
-it into typed observations (the four knowledge states:
+it into typed live observations (the four knowledge states:
 `verified`, `absent`, `unsupported_or_unverified`, `unavailable`),
 and exposes those via `http://127.0.0.1:8484/v0/...`.
 See the [draft /v0 observation contract](docs/CONTRACT_V0.md) for the
@@ -61,14 +61,14 @@ the runtime enforces the evidence.
 ## Honest defaults
 
 Gavetero does not invent. The runtime is read-only.
-The four-state vocabulary means:
+The live four-state vocabulary means:
 
 - `verified` — the named source yielded usable data
 - `absent` — no observation was present; this does not mean the feature is off
 - `unsupported_or_unverified` — support for this observation is not verified
 - `unavailable` — the observation could not be obtained or interpreted
 
-The default mode replays the embedded synthetic files from
+The default mode replays the embedded mock test data from
 `fixtures/synthetic/tplink-wr841n-v8`, with no checkout required.
 Fixtures are not hardware evidence. An explicit `--mock-fixture` path
 on the runtime overrides the embedded set. With `--live --host X`,
@@ -103,7 +103,7 @@ gvt setup
 
 # 2. Confirm the install is healthy.
 gvt doctor
-#   Installation checks only; no router observations. Default inspect uses synthetic demo data, not a real router.
+#   Installation checks only; no router observations. Default inspect uses mock test data, not a real router.
 #   ✓ CLI installation
 #   ✓ config location
 #   ✓ GMI key                  from OS credential store
@@ -135,15 +135,16 @@ gvt ask "¿Qué tan expuesta está mi red Wi-Fi?"
 ## Quick start (no router, first try)
 
 ```sh
-# Replay the embedded synthetic fixture files from any directory.
+# Replay the embedded mock test data from any directory.
 # No GMI key or router required.
 gvt inspect
-#   Mode:  mock (synthetic demo data, not a real router)
-#   device: synthetic (read device identity; fixture)
-#   status: synthetic (read router status; fixture)
-#   clients: synthetic (read DHCP lease rows; fixture)
-#   capabilities: synthetic (summarized observation states; entries are independent; fixture)
+#   Mode:  mock (test data, not a real router)
+#   device: mock (read device identity; fixture)
+#   status: mock (read router status; fixture)
+#   clients: mock (read DHCP lease rows; fixture)
+#   capabilities: mock (summarized observation states; entries are independent; fixture)
 #   ...
+#   Read your real router: gvt inspect --live --host <router-ip>
 
 gvt integrations install hermes
 #   ✓ Installed Gavetero skill to /home/you/.hermes/skills/gavetero/SKILL.md
@@ -154,7 +155,7 @@ gvt ask "Is my Wi-Fi exposed?" --dry-run
 #     2. get_security /v0/security/wps -> 404
 #     3. get_security /v0/security/remote-management -> 404
 #   Model: MiniMaxAI/MiniMax-M3
-#   Mode:  stub
+#   Mode:  mock
 ```
 
 `--dry-run` uses the deterministic agent without calling GMI Cloud.
@@ -174,22 +175,25 @@ gvt integrations install <hermes|opencode|omp>
                   # install the Gavetero skill for an agent runtime
 ```
 
-## The four-state vocabulary
+## Live states and mock test data
 
-Every observation the runtime produces carries one of four
+Every live observation the runtime produces carries one of four
 states. The agent reasons about the answer based on this
-vocabulary. Human-readable mock output labels these states as synthetic
-demo data; JSON keeps the original states and fixture provenance.
+vocabulary. Mock test data is separate: every mock observation includes
+`mode: "mock"` and `provenance: "fixture"`. Successful mock reads use
+`state: "mock"`, never `state: "verified"`; missing, unsupported, and failed
+reads retain their respective states. Human output uses `mock`,
+`mock/absent`, `mock/unsupported_or_unverified`, or `mock/unavailable`.
 
 | State | Meaning | Example |
 |---|---|---|
-| `verified` | source yielded usable data | firmware version read from a fixture |
+| `verified` | live source yielded usable data | firmware version read from the router |
 | `absent` | no observation was present | a read DHCP list contained no rows |
 | `unsupported_or_unverified` | support is not verified | provisional Wi-Fi fields |
 | `unavailable` | read or interpretation failed | timeout connecting to the router |
 
-Mock observations identify replayed data with `provenance: "fixture"`.
-Without files to replay, they use `provenance: "absent"`.
+Mock observations keep `provenance: "fixture"` even when test data is
+missing; this identifies the test context, not evidence of a router read.
 The default demo fixtures and the installable skill are embedded in the
 binary; neither requires a checkout at runtime.
 

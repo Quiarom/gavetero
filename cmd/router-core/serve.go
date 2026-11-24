@@ -226,7 +226,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func registerRoutes(mux *http.ServeMux, adapter domain.RouterAdapter, store *sessionStore) {
+	_, mock := adapter.(*fixture.Adapter)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if mock {
+			writeJSON(w, http.StatusOK, map[string]any{"state": "ok", "http_status": 200, "mode": "mock", "provenance": "fixture"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"state": "ok", "http_status": 200})
 	})
 	readers := map[string]observationReader{
@@ -242,21 +247,50 @@ func registerRoutes(mux *http.ServeMux, adapter domain.RouterAdapter, store *ses
 		readers[name] = securityReader(adapter, name)
 	}
 	for name, read := range readers {
+		if mock {
+			read = mockReader(read)
+			readers[name] = read
+		}
 		prefix := "/v0/security/"
 		switch name {
 		case "device", "status", "clients":
 			prefix = "/v0/"
 		}
-		mux.HandleFunc(prefix+name, observationHandler(read))
+		mux.HandleFunc(prefix+name, observationHandlerWithMode(read, mock))
 	}
-	mux.HandleFunc("/v0/capabilities", observationHandler(capabilitiesReader(readers)))
+	read := capabilitiesReader(readers)
+	if mock {
+		read = mockReader(read)
+	}
+	mux.HandleFunc("/v0/capabilities", observationHandlerWithMode(read, mock))
 }
 
 func observationHandler(read observationReader) http.HandlerFunc {
+	return observationHandlerWithMode(read, false)
+}
+
+func mockReader(read observationReader) observationReader {
+	return func(ctx context.Context) domain.Observation[any] {
+		result := read(ctx)
+		if result.State == domain.Verified {
+			result.State = domain.Mock
+		}
+		result.Mode = "mock"
+		result.Provenance = domain.ProvenanceFixture
+		return result
+	}
+}
+
+func observationHandlerWithMode(read observationReader, mock bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
-			writeJSON(w, http.StatusMethodNotAllowed, observation(domain.Unavailable, "method not allowed", domain.ProvenanceAbsent, nil))
+			result := observation(domain.Unavailable, "method not allowed", domain.ProvenanceAbsent, nil)
+			if mock {
+				result.Mode = "mock"
+				result.Provenance = domain.ProvenanceFixture
+			}
+			writeJSON(w, http.StatusMethodNotAllowed, result)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)

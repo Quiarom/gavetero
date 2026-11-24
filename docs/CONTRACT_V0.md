@@ -6,7 +6,7 @@ alpha is pending.
 
 ## Observation envelope
 
-Each observation has the same four keys in HTTP, CLI machine output, and agent
+Each observation has the same four core keys in HTTP, CLI machine output, and agent
 tool results. Use `state` for decisions and `reason` for display; reason text
 is not a machine-readable code.
 
@@ -21,19 +21,26 @@ is not a machine-readable code.
 
 | State | What it means | HTTP on a known GET route |
 | --- | --- | --- |
-| `verified` | The named source yielded at least one usable fact. Known `"false"` and numeric zero count as data. Some fields may still be unknown. | 200 |
+| `verified` | The live source yielded at least one usable fact. Known `"false"` and numeric zero count as data. Some fields may still be unknown. | 200 |
 | `absent` | The source was missing or yielded no observation. This is not proof that the feature is off or that the firmware never implements it. | 200 |
 | `unsupported_or_unverified` | There is no verified support for this observation. Provisional Wi-Fi data may be present, but must not be treated as verified. | 404 without data, 200 with provisional data |
 | `unavailable` | The observation could not be obtained or interpreted (for example, a session, transport or parsing failure). | 503 |
 
-`provenance` is `observed` for a router response, `fixture` for replay, and
-`absent` when there is no recorded source. Mock mode reads fixture files
-relative to the working directory; they are not embedded. If a fixture file
-is missing, its observation is `absent` with `provenance: "absent"` and
-`data: null`. A file successfully replayed with an empty DHCP lease list
-has `state: "absent"`, `provenance: "fixture"` and `data: []`.
-Verified fixture data confirms only what the replay produced;
-**fixtures are not evidence of current hardware**.
+These four states remain unchanged for live observations. Live `provenance`
+is `observed` for a router response or `absent` with no recorded source.
+
+Mock mode is test data, not a real router. Every mock observation adds
+`mode: "mock"` and uses `provenance: "fixture"`, including missing,
+unsupported, and error results. A successful mock read has `state: "mock"`
+(HTTP 200), never `state: "verified"`. Mock capability matrices likewise
+use `mock` rather than `verified`. Other states and their HTTP statuses
+retain the meanings above. `mock` requires nonempty usable data.
+
+Default mock fixtures are embedded; `--mock-fixture` selects a directory
+instead. A missing file yields `state: "absent"` with `data: null`; a
+replayed empty DHCP list yields `state: "absent"` with `data: []`.
+Both retain mock mode and fixture provenance. Fixtures are not hardware
+evidence. Live envelopes omit `mode` and their serialization is unchanged.
 When no data exists the field is `null`, except an empty DHCP lease list may
 be `[]`. **Not observed does not mean off**; missing fields, `"unknown"`, and
 `null` must not be interpreted as false or zero.
@@ -63,6 +70,13 @@ identity and matrix keys there are `router` and `caps`. A valid unavailable
 result is printed and makes inspect exit nonzero; absent and unsupported
 observations are not command errors. Invalid responses and command errors also
 exit nonzero.
+
+Mock inspect JSON and JSONL also carry top-level `mode: "mock"` and
+`provenance: "fixture"`. Agent chat results carrying mock observations
+report the same top-level context; their tool results retain the runtime
+envelopes unchanged. The skill invokes these CLI surfaces; there is no
+built-in MCP server. Legacy `router-core probe/inspect --fixtures ...
+--json` also mark their JSON as mock with fixture provenance.
 
 Agent tools pass the HTTP envelope unchanged to the model and expose it as
 `steps[].result` in JSON chat output. HTTP status and tool name are separate
