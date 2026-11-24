@@ -20,10 +20,8 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
-      - darwin
     goarch:
       - amd64
-      - arm64
     mod_timestamp: "{{ .CommitTimestamp }}"
     flags:
       - -trimpath
@@ -51,6 +49,10 @@ archives:
       - README.md
       - CHANGELOG.md
       - NOTICE
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
 
 changelog:
   use: git

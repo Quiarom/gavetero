@@ -11,7 +11,7 @@
 #   (none)                           - install the latest stable release
 #
 # Behavior:
-#   1. Detects the platform (linux/darwin, amd64/arm64).
+#   1. Detects the platform (prebuilt: linux/amd64 only).
 #   2. Downloads the matching prebuilt binary.
 #   3. Installs to ~/.local/bin/gavetero + symlink to gvt.
 #   4. If ~/.local/bin is not on PATH, prints one line to add to the shell rc.
@@ -37,14 +37,41 @@ detect_platform() {
   case "${arch}" in
     x86_64|amd64) arch="amd64" ;;
     aarch64|arm64) arch="arm64" ;;
-    *) echo "unsupported architecture: ${arch}" >&2; return 1 ;;
+    *) echo "No prebuilt binary exists for architecture ${arch}." >&2; return 1 ;;
   esac
   case "${os}" in
     linux) os="linux" ;;
     darwin) os="darwin" ;;
-    *) echo "unsupported OS: ${os}" >&2; return 1 ;;
+    *) echo "No prebuilt binary exists for OS ${os}." >&2; return 1 ;;
   esac
+  if [ "${os}_${arch}" != "linux_amd64" ]; then
+    echo "No prebuilt binary exists for ${os}/${arch}." >&2
+    return 1
+  fi
   echo "${os}_${arch}"
+}
+
+verify_archive() {
+  local archive="$1" checksums="$2" name="$3" expected actual
+  expected="$(awk -v name="${name}" '$2 == name || $2 == "*" name { print $1 }' "${checksums}")"
+  if [[ ! "${expected}" =~ ^[[:xdigit:]]{64}$ ]]; then
+    echo "Checksum verification failed: missing or invalid entry for ${name}." >&2
+    return 1
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "${archive}")" || return 1
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "${archive}")" || return 1
+  else
+    echo "Checksum verification requires sha256sum or shasum." >&2
+    return 1
+  fi
+  actual="${actual%% *}"
+  if [ "${actual,,}" != "${expected,,}" ]; then
+    echo "Checksum verification failed: SHA-256 mismatch for ${name}." >&2
+    return 1
+  fi
+  echo "Checksum OK: ${name}"
 }
 
 # ---------------------------------------------------------------------------
@@ -103,6 +130,14 @@ main() {
     echo "If you are a user, set GAVETERO_VERSION to a tag listed at https://github.com/${REPO}/releases:"
     echo "  curl -sSf https://raw.githubusercontent.com/${REPO}/main/install.sh | GAVETERO_VERSION=vX.Y.Z bash"
     exit 1
+  fi
+
+  if [ -n "${GAVETERO_VERSION:-}" ] || [ -z "${GAVETERO_COMMIT:-}" ]; then
+    if ! curl -fsSL -o "${tmpdir}/checksums.txt" "${url%/*}/checksums.txt"; then
+      echo "Checksum verification failed: could not download checksums.txt." >&2
+      exit 1
+    fi
+    verify_archive "${tmpdir}/gavetero.tar.gz" "${tmpdir}/checksums.txt" "${BIN}_${platform}.tar.gz"
   fi
 
   # Extract (tarball layout: gavetero + gvt symlink target)
