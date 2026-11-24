@@ -8,11 +8,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Quiarom/gavetero/internal/adapters/fixture"
 	"github.com/Quiarom/gavetero/internal/adapters/tplinkwr841v8"
+	"github.com/Quiarom/gavetero/internal/domain"
 	"github.com/Quiarom/gavetero/internal/transport"
 )
 
@@ -28,17 +32,31 @@ type wr841nServerForServe struct {
 
 func newWR841NForServe(t *testing.T, user, pass string) *wr841nServerForServe {
 	t.Helper()
+	return newWR841NForServeWithStatus(t, user, pass, http.StatusOK)
+}
+
+func newWR841NForServeWithStatus(t *testing.T, user, pass string, pageStatus int) *wr841nServerForServe {
+	t.Helper()
 	authValue := base64.StdEncoding.EncodeToString([]byte(user + ":" + pass))
 	expected := "Basic " + authValue
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/userRpm/WlanSecurityRpm.htm", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.Header.Get("Authorization") != expected || r.Header.Get("Referer") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(pageStatus)
+		_, _ = io.WriteString(w, `<script>var wlanPara = new Array(8,0,3,"33",0,0,0,1800,0,"<TEST_PSK>"); var ssidList = new Array("test-network");</script>`)
+	})
 	mux.HandleFunc("/userRpm/AssignedIpAddrListRpm.htm", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != expected {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = io.WriteString(w, `<html><body><script>var DHCPDynList = new Array("omarchy", "00:11:22:33:44:55:66", "192.168.1.100", "01:24:35", 0, 0); var DHCPDynPara = new Array(1, 4, 0, 0);</script></body></html>`)
+		w.WriteHeader(pageStatus)
+		_, _ = io.WriteString(w, `<html><body><script>var DHCPDynList = new Array("omarchy", "00:11:22:33:44:55", "192.168.1.100", "01:24:35", 0, 0); var DHCPDynPara = new Array(1, 4, 0, 0);</script></body></html>`)
 	})
 	mux.HandleFunc("/userRpm/StatusRpm.htm", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != expected {
@@ -51,6 +69,7 @@ func newWR841NForServe(t *testing.T, user, pass string) *wr841nServerForServe {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(pageStatus)
 		_, _ = io.WriteString(w, `<html><body>var statusPara = new Array(1,1,1,1,1,1,"3.15.9 Build 140724 Rel.63227n","WR841N v8 00000000",0,1);</body></html>`)
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +146,7 @@ func TestServe_Device(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body["firmwareVersion"] == nil {
+	if data, ok := body["data"].(map[string]any); !ok || data["firmwareVersion"] == nil || body["state"] != "verified" {
 		t.Errorf("body missing firmwareVersion: %v", body)
 	}
 }
@@ -151,9 +170,7 @@ func TestServe_CapabilitiesReflectVerification(t *testing.T) {
 		t.Fatalf("status: %d want 200", resp.StatusCode)
 	}
 
-	var body struct {
-		Capabilities map[string]string `json:"capabilities"`
-	}
+	var body domain.Observation[map[string]string]
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -161,15 +178,56 @@ func TestServe_CapabilitiesReflectVerification(t *testing.T) {
 		"device":            "verified",
 		"status":            "verified",
 		"clients":           "verified",
-		"wireless_security": "unavailable",
+		"wireless_security": "unsupported_or_unverified",
 		"wps":               "unsupported_or_unverified",
 		"dmz":               "unsupported_or_unverified",
 		"upnp":              "unsupported_or_unverified",
 		"remote_management": "unsupported_or_unverified",
 		"forwarding":        "unsupported_or_unverified",
 	} {
-		if got := body.Capabilities[capability]; got != want {
+		if got := body.Data[capability]; got != want {
 			t.Errorf("%s: got %q want %q", capability, got, want)
+		}
+	}
+}
+
+func TestServe_CapabilityProbeBudgetsAreIndependent(t *testing.T) {
+	wirelessStarted := make(chan struct{})
+	readers := map[string]observationReader{
+		"wireless": func(ctx context.Context) domain.Observation[any] {
+			close(wirelessStarted)
+			if err := ctx.Err(); err != nil {
+				return observationError(err, "wireless")
+			}
+			return observation(domain.UnsupportedOrUnverified, "provisional Wi-Fi", domain.ProvenanceObserved, true)
+		},
+	}
+	for _, name := range []string{"device", "status", "clients"} {
+		readers[name] = func(ctx context.Context) domain.Observation[any] {
+			select {
+			case <-wirelessStarted:
+				return observed("read", domain.ProvenanceObserved, true)
+			case <-ctx.Done():
+				return observationError(ctx.Err(), name)
+			}
+		}
+	}
+	for _, name := range []string{"wps", "dmz", "upnp", "remote-management", "forwarding"} {
+		readers[name] = func(context.Context) domain.Observation[any] {
+			return observationError(domain.ErrUnverifiedEndpoint, name)
+		}
+	}
+	result := assertObservation(t, observationHandler(capabilitiesReader(readers)), domain.Verified, http.StatusOK)
+	var matrix map[string]domain.ObservationState
+	if err := json.Unmarshal(result.Data, &matrix); err != nil {
+		t.Fatal(err)
+	}
+	if got := matrix["wireless_security"]; got != domain.UnsupportedOrUnverified {
+		t.Fatalf("wireless_security = %q, want %q", got, domain.UnsupportedOrUnverified)
+	}
+	for _, name := range []string{"device", "status", "clients"} {
+		if got := matrix[name]; got != domain.Verified {
+			t.Errorf("%s = %q, want %q", name, got, domain.Verified)
 		}
 	}
 }
@@ -195,7 +253,7 @@ func TestServe_Status(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body["reachable"] == nil {
+	if data, ok := body["data"].(map[string]any); !ok || data["reachable"] == nil || body["state"] != "verified" {
 		t.Errorf("body missing reachable: %v", body)
 	}
 }
@@ -229,18 +287,186 @@ func TestServe_SecurityEndpoints(t *testing.T) {
 				t.Fatalf("GET %s: %v", p, err)
 			}
 			defer resp.Body.Close()
-			if resp.StatusCode != 200 && resp.StatusCode != 404 && resp.StatusCode != 503 {
-				t.Errorf("status: %d want 200|404|503", resp.StatusCode)
+			wantStatus := http.StatusNotFound
+			if strings.HasSuffix(p, "/wireless") {
+				wantStatus = http.StatusOK
 			}
-			var body map[string]any
-			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-				t.Fatalf("decode: %v", err)
+			if resp.StatusCode != wantStatus {
+				t.Errorf("status: %d want %d", resp.StatusCode, wantStatus)
 			}
-			if _, ok := body["state"]; !ok {
-				t.Errorf("body missing state field: %v", body)
+			body := readAll(t, resp.Body)
+			result, err := domain.DecodeObservation([]byte(body))
+			if err != nil || result.State != domain.UnsupportedOrUnverified {
+				t.Fatalf("envelope: %s (%v)", body, err)
+			}
+			if wantStatus == http.StatusOK {
+				var wifi map[string]any
+				if err := json.Unmarshal(result.Data, &wifi); err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(result.Reason, "3.15.9") || result.Provenance != domain.ProvenanceObserved ||
+					wifi["securityType"] != "wpa2-psk" || wifi["hasPreSharedKey"] != true || len(wifi) != 7 ||
+					strings.Contains(body, "TEST_PSK") {
+					t.Errorf("wireless data not safely projected: %s", body)
+				}
 			}
 		})
 	}
+}
+
+func TestServe_UpstreamErrorWithReadableObservationBody(t *testing.T) {
+	for _, status := range []int{http.StatusServiceUnavailable, http.StatusNotFound} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			router := newWR841NForServeWithStatus(t, "test-user", "test-password", status)
+			adapter := tplinkwr841v8.New(strings.TrimPrefix(router.server.URL, "http://"), transport.WithTimeout(time.Second))
+			if err := adapter.Login(t.Context(), "test-user", "test-password"); err != nil {
+				t.Fatal(err)
+			}
+			mux := http.NewServeMux()
+			registerRoutes(mux, adapter, nil)
+			for _, path := range []string{"/v0/security/wireless", "/v0/clients", "/v0/device", "/v0/status"} {
+				t.Run(path, func(t *testing.T) {
+					w := httptest.NewRecorder()
+					mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+					got, err := domain.DecodeObservation(w.Body.Bytes())
+					if err != nil || w.Code != http.StatusServiceUnavailable || got.State != domain.Unavailable ||
+						got.Provenance != domain.ProvenanceAbsent || string(got.Data) != "null" {
+						t.Fatalf("HTTP %d %s (%v), want HTTP 503 unavailable with absent provenance and null data", w.Code, w.Body, err)
+					}
+				})
+			}
+		})
+	}
+}
+
+type wirelessTestAdapter struct {
+	observationTestAdapter
+}
+
+func (a wirelessTestAdapter) FetchWirelessSecurity(context.Context) (tplinkwr841v8.WirelessSecurity, error) {
+	return tplinkwr841v8.WirelessSecurity{}, a.err
+}
+
+func TestServe_WirelessReadErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		adapter domain.RouterAdapter
+		state   domain.ObservationState
+		status  int
+	}{
+		{"malformed response", wirelessTestAdapter{observationTestAdapter{err: domain.ErrUnexpectedResponse}}, domain.Unavailable, http.StatusServiceUnavailable},
+		{"timed out", wirelessTestAdapter{observationTestAdapter{err: context.DeadlineExceeded}}, domain.Unavailable, http.StatusServiceUnavailable},
+		{"no verified recipe", wirelessTestAdapter{observationTestAdapter{err: domain.ErrUnverifiedEndpoint}}, domain.UnsupportedOrUnverified, http.StatusNotFound},
+		{"no reader", observationTestAdapter{}, domain.UnsupportedOrUnverified, http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			registerRoutes(mux, tc.adapter, nil)
+			result := assertObservation(t, func(w http.ResponseWriter, r *http.Request) {
+				r.URL.Path = "/v0/security/wireless"
+				mux.ServeHTTP(w, r)
+			}, tc.state, tc.status)
+			if result.Provenance != domain.ProvenanceAbsent || string(result.Data) != "null" {
+				t.Fatalf("unexpected evidence: %+v", result)
+			}
+		})
+	}
+}
+
+type observationTestAdapter struct {
+	domain.RouterAdapter
+	clients  []domain.Client
+	security domain.SecurityState
+	err      error
+}
+
+func (a observationTestAdapter) Identify(context.Context) (domain.DeviceInfo, error) {
+	return domain.DeviceInfo{Vendor: "configured adapter", Provenance: domain.ProvenanceObserved}, a.err
+}
+
+func (a observationTestAdapter) Status(context.Context) (domain.RouterStatus, error) {
+	return domain.RouterStatus{}, a.err
+}
+
+func (a observationTestAdapter) Clients(context.Context) ([]domain.Client, error) {
+	return a.clients, a.err
+}
+
+func (a observationTestAdapter) SecurityCapability(context.Context, string) (domain.SecurityState, error) {
+	return a.security, a.err
+}
+
+func TestObservationHandler(t *testing.T) {
+	security := domain.SecurityState{
+		WPSEnabled: domain.False, DMZEnabled: domain.False, ActiveUPnPMappings: domain.SomeInt(0),
+		RemoteManagementEnabled: domain.False, ForwardingRules: domain.SomeInt(0),
+		Provenance: domain.ProvenanceObserved,
+	}
+	for _, name := range []string{"wps", "dmz", "upnp", "remote-management", "forwarding"} {
+		for _, tc := range []struct {
+			name    string
+			adapter observationTestAdapter
+			state   domain.ObservationState
+			status  int
+		}{
+			{"false_or_zero", observationTestAdapter{security: security}, domain.Verified, http.StatusOK},
+			{"empty", observationTestAdapter{}, domain.Absent, http.StatusOK},
+			{"absent", observationTestAdapter{err: domain.ErrObservationAbsent}, domain.Absent, http.StatusOK},
+			{"unsupported", observationTestAdapter{err: domain.ErrUnverifiedEndpoint}, domain.UnsupportedOrUnverified, http.StatusNotFound},
+			{"unavailable", observationTestAdapter{err: domain.ErrUnexpectedResponse}, domain.Unavailable, http.StatusServiceUnavailable},
+		} {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				assertObservation(t, observationHandler(securityReader(tc.adapter, name)), tc.state, tc.status)
+			})
+		}
+	}
+	t.Run("empty clients", func(t *testing.T) {
+		result := assertObservation(t, observationHandler(clientsReader(observationTestAdapter{clients: []domain.Client{}})), domain.Absent, http.StatusOK)
+		if string(result.Data) != "[]" || result.Provenance != domain.ProvenanceObserved {
+			t.Fatalf("unexpected empty lease evidence: %+v", result)
+		}
+	})
+	t.Run("empty device", func(t *testing.T) {
+		assertObservation(t, observationHandler(deviceReader(observationTestAdapter{})), domain.Unavailable, http.StatusServiceUnavailable)
+	})
+	t.Run("empty status", func(t *testing.T) {
+		assertObservation(t, observationHandler(statusReader(observationTestAdapter{})), domain.Absent, http.StatusOK)
+	})
+}
+
+func assertObservation(t *testing.T, handler http.HandlerFunc, want domain.ObservationState, status int) domain.Observation[json.RawMessage] {
+	t.Helper()
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	got, err := domain.DecodeObservation(w.Body.Bytes())
+	if err != nil || w.Code != status || got.State != want {
+		t.Fatalf("HTTP %d %s (%v), want HTTP %d %s", w.Code, w.Body.String(), err, status, want)
+	}
+	return got
+}
+
+func TestServe_FixtureProvenance(t *testing.T) {
+	dir := t.TempDir()
+	mux := http.NewServeMux()
+	registerRoutes(mux, fixture.New(dir), nil)
+	read := func(name string, state domain.ObservationState, source domain.Provenance, data string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v0/"+name, nil))
+		result, err := domain.DecodeObservation(w.Body.Bytes())
+		if err != nil || w.Code != http.StatusOK || result.State != state || result.Provenance != source || (data != "" && string(result.Data) != data) {
+			t.Fatalf("%s: HTTP %d %s (%v)", name, w.Code, w.Body.String(), err)
+		}
+	}
+	for _, name := range []string{"device", "status", "clients"} {
+		read(name, domain.Absent, domain.ProvenanceAbsent, "null")
+	}
+	read("capabilities", domain.Verified, domain.ProvenanceAbsent, "")
+	if err := os.WriteFile(filepath.Join(dir, "dhcp.html"), []byte(`<script>var DHCPDynList = new Array();</script>`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	read("clients", domain.Absent, domain.ProvenanceFixture, "[]")
+	read("capabilities", domain.Verified, domain.ProvenanceFixture, "")
 }
 
 func TestServe_RejectsNonLoopbackAddr(t *testing.T) {

@@ -153,12 +153,15 @@ async fn fetch_json(client: &Client, url: String) -> Result<LocalResponse, Strin
     Ok(LocalResponse { status, data })
 }
 
-fn validate_device(response: &LocalResponse) -> Result<(), String> {
+fn validate_device(response: &LocalResponse) -> Result<&Value, String> {
     if response.status != 200 {
         return Err("El router no respondió correctamente".to_string());
     }
-    let authenticated = response
-        .data
+    if response.data.get("state").and_then(Value::as_str) != Some("verified") {
+        return Err("No se pudo verificar la identidad del router".to_string());
+    }
+    let data = &response.data["data"];
+    let authenticated = data
         .get("authenticated")
         .and_then(Value::as_str);
 
@@ -166,23 +169,19 @@ fn validate_device(response: &LocalResponse) -> Result<(), String> {
         return Err("Autenticación rechazada por el router".to_string());
     }
 
-    let vendor = response
-        .data
+    let vendor = data
         .get("vendor")
         .and_then(Value::as_str)
         .unwrap_or("");
-    let model = response
-        .data
+    let model = data
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or("");
-    let hardware = response
-        .data
+    let hardware = data
         .pointer("/hardwareVersion/value")
         .and_then(Value::as_str)
         .unwrap_or("");
-    let firmware = response
-        .data
+    let firmware = data
         .pointer("/firmwareVersion/value")
         .and_then(Value::as_str)
         .unwrap_or("");
@@ -191,7 +190,7 @@ fn validate_device(response: &LocalResponse) -> Result<(), String> {
         return Err("No se pudo obtener información de identidad del router".to_string());
     }
 
-    Ok(())
+    Ok(data)
 }
 
 #[tauri::command]
@@ -315,10 +314,13 @@ async fn connect_router(
             return Err(error);
         }
     };
-    if let Err(error) = validate_device(&device) {
-        stop_services(&state);
-        return Err(error);
-    }
+    let device = match validate_device(&device) {
+        Ok(data) => data,
+        Err(error) => {
+            stop_services(&state);
+            return Err(error);
+        }
+    };
 
     let agent_addr = match reserve_loopback_addr() {
         Ok(address) => address,
@@ -389,12 +391,10 @@ async fn connect_router(
     }
 
     let vendor = device
-        .data
         .get("vendor")
         .and_then(Value::as_str)
         .unwrap_or("router");
     let model = device
-        .data
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or("generic");
@@ -415,7 +415,7 @@ async fn connect_router(
         } else {
             "deterministic".to_string()
         },
-        device: device.data,
+        device: device.clone(),
     })
 }
 
@@ -503,13 +503,13 @@ mod tests {
     fn validate_device_rejects_empty_identity() {
         let response = LocalResponse {
             status: 200,
-            data: json!({
+            data: json!({"state": "verified", "data": {
                 "authenticated": "unknown",
                 "vendor": "",
                 "model": "",
                 "hardwareVersion": {"value": ""},
                 "firmwareVersion": {"value": ""}
-            }),
+            }}),
         };
         assert!(validate_device(&response).is_err());
     }
@@ -518,13 +518,13 @@ mod tests {
     fn validate_device_accepts_verified_identity() {
         let response = LocalResponse {
             status: 200,
-            data: json!({
+            data: json!({"state": "verified", "data": {
                 "authenticated": "true",
                 "vendor": "TP-Link",
                 "model": "TL-WR841N/ND",
                 "hardwareVersion": {"value": "hardware"},
                 "firmwareVersion": {"value": "firmware"}
-            }),
+            }}),
         };
         assert!(validate_device(&response).is_ok());
     }
@@ -533,13 +533,13 @@ mod tests {
     fn validate_device_accepts_universal_models() {
         let response = LocalResponse {
             status: 200,
-            data: json!({
+            data: json!({"state": "verified", "data": {
                 "authenticated": "true",
                 "vendor": "Sercomm",
                 "model": "IP3442M-L/US",
                 "hardwareVersion": {"value": "hardware"},
                 "firmwareVersion": {"value": "firmware"}
-            }),
+            }}),
         };
         assert!(validate_device(&response).is_ok());
     }
@@ -548,13 +548,13 @@ mod tests {
     fn validate_device_rejects_unauthenticated() {
         let response = LocalResponse {
             status: 200,
-            data: json!({
+            data: json!({"state": "verified", "data": {
                 "authenticated": "false",
                 "vendor": "TP-Link",
                 "model": "TL-WR841N/ND",
                 "hardwareVersion": {"value": "hardware"},
                 "firmwareVersion": {"value": "firmware"}
-            }),
+            }}),
         };
         assert!(validate_device(&response).is_err());
     }

@@ -12,16 +12,15 @@ export const mockDevice = {
     source: "router:status"
   },
   managementAddress: "192.168.1.1",
-  authenticated: "true",
-  provenance: "observed"
+  authenticated: "unknown",
+  provenance: "fixture"
 };
 
 export const mockStatus = {
   reachable: "true",
   wanStatus: "connected",
   uptimeSeconds: 20000,
-  uptime: "5h33m20s",
-  provenance: "observed"
+  provenance: "fixture"
 };
 
 export const mockClients = {
@@ -53,45 +52,39 @@ export const mockCapabilities = {
     device: "verified",
     status: "verified",
     clients: "verified",
-    wireless_security: "unverified",
-    wps: "absent",
-    dmz: "verified",
-    upnp: "absent",
-    remote_management: "absent",
-    forwarding: "verified"
+    wireless_security: "unsupported_or_unverified",
+    wps: "unsupported_or_unverified",
+    dmz: "unsupported_or_unverified",
+    upnp: "unsupported_or_unverified",
+    remote_management: "unsupported_or_unverified",
+    forwarding: "unsupported_or_unverified"
   }
 };
 
-export const mockSecurity = {
-  dmz: {
-    state: "verified",
-    dmz_enabled: "false",
-    dmz_host: "",
-    description: "Demilitarized Zone forwarding is disabled. No internal host is fully exposed to WAN."
-  },
-  forwarding: {
-    state: "verified",
-    forwarding_rules: [],
-    description: "Virtual server and port forwarding rules. Currently 0 active forwarded ports."
-  },
-  wireless: {
-    state: "unavailable",
-    reason: "router-core: endpoint is unverified against captured traffic",
-    description: "WPA2-PSK status extraction pending lab verification."
-  },
-  wps: {
-    state: "unsupported_or_unverified",
-    reason: "WPS endpoint not present on this firmware build (HTTP 501)",
-    description: "Wi-Fi Protected Setup is absent or unsupported in hardware/firmware."
-  },
-  upnp: {
-    state: "unsupported_or_unverified",
-    reason: "UPnP endpoint not present on this firmware build (HTTP 501)",
-    description: "Universal Plug and Play is absent or unsupported in hardware/firmware."
-  },
-  remote_management: {
-    state: "unsupported_or_unverified",
-    reason: "Remote Management endpoint not present on this firmware build (HTTP 501)",
-    description: "Remote WAN management interface is disabled/absent."
-  }
+const fixtureObservation = (data) => ({
+  state: "verified",
+  reason: "Ejemplo sintético de fixture.",
+  provenance: "fixture",
+  data
+});
+
+const unverifiedSecurity = (reason) => ({
+  state: "unsupported_or_unverified",
+  reason,
+  provenance: "absent",
+  data: null
+});
+
+const fixtureText = (value) => ({ value, trust: "untrusted", source: "router:dhcp" });
+
+export const mockObservations = {
+  "/v0/device": fixtureObservation(mockDevice),
+  "/v0/status": fixtureObservation(mockStatus),
+  "/v0/clients": fixtureObservation(mockClients.clients.map(({ name, lease, ...client }) => ({
+    ...client, name: fixtureText(name), leaseTime: fixtureText(lease), provenance: "fixture"
+  }))),
+  "/v0/capabilities": fixtureObservation(mockCapabilities.capabilities),
+  "/v0/security/wireless": unverifiedSecurity("Solo hay evidencia histórica para el firmware 3.15.9; el fixture no aporta una lectura Wi-Fi."),
+  "/v0/security/wps": unverifiedSecurity("El fixture no aporta una lectura verificada de WPS."),
+  "/v0/security/dmz": unverifiedSecurity("El fixture no aporta una lectura verificada de DMZ.")
 };

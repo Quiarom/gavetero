@@ -8,7 +8,7 @@ import {
   ChevronUp,
   Bot
 } from "lucide-react";
-import { mockDevice, mockStatus, mockClients, mockCapabilities } from "@/data/mockData";
+import { mockAssistantReply } from "@/lib/mockAssistant";
 import { askAssistant } from "@/lib/desktop";
 
 export function AiAssistantView({ isLive = false }) {
@@ -53,56 +53,13 @@ export function AiAssistantView({ isLive = false }) {
     ]);
 
     if (!isLive) {
-      setTimeout(() => {
-        const mockSteps = [
-          { tool: "get_device", path: "/v0/device", http_status: 200, result: mockDevice },
-          { tool: "get_status", path: "/v0/status", http_status: 200, result: mockStatus },
-          { tool: "get_clients", path: "/v0/clients", http_status: 200, result: mockClients },
-          { tool: "get_capabilities", path: "/v0/capabilities", http_status: 200, result: mockCapabilities }
-        ];
-
-        let mockAnswer = "Hechos observados en simulación local:\n\n" +
-          "• **Dispositivo**: " + mockDevice.vendor + " " + mockDevice.model + " (Firmware " + mockDevice.firmwareVersion.value + ").\n" +
-          "• **Estado WAN**: " + (mockStatus.wanStatus === "connected" ? "Conectado a Internet" : "Sin conexión") + " con " + (mockStatus.uptime || "5h 33m") + " de actividad.\n" +
-          "• **Equipos observados**: " + mockClients.clients.length + " dispositivos con concesión DHCP activa.\n" +
-          "• **Capacidades verificadas**: Dispositivo, estado, clientes y DMZ.\n\n" +
-          "Para auditoría en vivo con el modelo MiniMax M3 y conexión directa al router, cambia a modo 'Live' en la barra superior.";
-
-        const qLower = question.toLowerCase();
-        if (qLower.includes("quien") || qLower.includes("quién") || qLower.includes("dispositiv") || qLower.includes("conectad") || qLower.includes("aparato")) {
-          mockAnswer = "Equipos observados en la red según la tabla DHCP local:\n\n" +
-            mockClients.clients.map(c => `• **${c.name}** (IP: \`${c.ip}\`, MAC: \`${c.mac}\`, Concesión: ${c.lease})`).join("\n") +
-            "\n\nLímites de la evidencia: Se observan " + mockClients.clients.length + " equipos con concesión DHCP activa.";
-        } else if (qLower.includes("wifi") || qLower.includes("wi-fi") || qLower.includes("expuest") || qLower.includes("segur")) {
-          mockSteps.push({
-            tool: "get_security",
-            path: "/v0/security/wireless",
-            http_status: 503,
-            result: { state: "unavailable", reason: "router-core: endpoint is unverified against captured traffic" }
-          });
-          mockAnswer = "Análisis de exposición de red Wi-Fi (Modo Mock):\n\n" +
-            "• **Seguridad Wi-Fi**: El endpoint de seguridad inalámbrica está en estado `unavailable` (pendiente de verificación contra capturas de tráfico).\n" +
-            "• **WPS**: Está en estado `absent` (HTTP 404), no hay superficie vulnerable de WPS en este firmware.\n" +
-            "• **DMZ**: Está deshabilitado (`false`), ningún equipo interno está expuesto completamente a la WAN.\n\n" +
-            "Recomendación: En modo Live con MiniMax M3 activo, el agente audita estas superficies paso a paso.";
-        }
-
-        setConversations((current) =>
-          current.map((conversation) =>
-            conversation.id === pendingId
-              ? {
-                  ...conversation,
-                  isPending: false,
-                  answer: mockAnswer,
-                  model: "MiniMax M3 (Simulación Mock)",
-                  mode: "mock",
-                  steps: mockSteps
-                }
-              : conversation
-          )
-        );
-        setIsProcessing(false);
-      }, 500);
+      const reply = mockAssistantReply(question);
+      setConversations((current) =>
+        current.map((conversation) => conversation.id === pendingId
+          ? { ...conversation, ...reply, isPending: false, model: "Simulador local", mode: "mock" }
+          : conversation)
+      );
+      setIsProcessing(false);
       return;
     }
 
@@ -124,8 +81,8 @@ export function AiAssistantView({ isLive = false }) {
                 answer:
                   payload.answer ||
                   "No se recibió respuesta explicativa del agente.",
-                model: payload.model || "MiniMax M3",
-                mode: payload.mode || "live",
+                model: payload.model,
+                mode: payload.mode,
                 steps: payload.steps || []
               }
             : conversation
@@ -150,7 +107,7 @@ export function AiAssistantView({ isLive = false }) {
       {/* Header section: Brutalist & Tech-forward */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-neutral-800 pb-4">
         <h1 className="text-xl sm:text-2xl font-black uppercase tracking-tight font-mono text-white flex items-center gap-2">
-          <span className="text-primary font-mono font-black">&gt;&gt;</span> ASISTENTE DE RED (MINIMAX M3)
+          <span className="text-primary font-mono font-black">&gt;&gt;</span> ASISTENTE DE RED
         </h1>
         <div className="flex items-center gap-2 font-mono text-xs">
           <span className={`px-2.5 py-1 border font-bold uppercase ${
@@ -158,7 +115,7 @@ export function AiAssistantView({ isLive = false }) {
               ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
               : "border-amber-500/40 bg-amber-500/10 text-amber-400"
           }`}>
-            {isLive ? "MODO LIVE (CONEXIÓN ACTIVA)" : "MODO MOCK (FIXTURES)"}
+            {isLive ? "SERVICIO LOCAL" : "MODO MOCK (FIXTURES)"}
           </span>
         </div>
       </div>
@@ -244,7 +201,7 @@ export function AiAssistantView({ isLive = false }) {
             {conversation.isPending ? (
               <div className="flex items-center gap-2.5 text-primary text-xs font-mono font-bold py-2 px-1">
                 <RotateCw className="h-3.5 w-3.5 animate-spin" />
-                <span>CONSULTANDO ROUTER Y RAZONANDO CON MINIMAX...</span>
+                <span>ESPERANDO RESPUESTA DEL ASISTENTE...</span>
               </div>
             ) : (
               <div className="border-2 border-neutral-800 bg-neutral-950 p-5 space-y-4 shadow-sm">
@@ -255,7 +212,7 @@ export function AiAssistantView({ isLive = false }) {
                       <Bot className="h-3 w-3" />
                     </div>
                     <span className="text-xs font-bold text-white uppercase">
-                      {conversation.model || "MiniMax M3"}
+                      {conversation.model || "Asistente local"}
                     </span>
                     <span
                       className={`text-[10px] px-2 py-0.5 border font-bold uppercase ${
@@ -264,7 +221,7 @@ export function AiAssistantView({ isLive = false }) {
                           : "bg-amber-500/10 text-amber-400 border-amber-500/30"
                       }`}
                     >
-                      {conversation.mode === "live" ? "EN VIVO" : "DEMOSTRACIÓN"}
+                      {conversation.mode === "live" ? "EN VIVO" : conversation.mode ? "DEMOSTRACIÓN" : "MODO NO INFORMADO"}
                     </span>
                   </div>
                 </div>
@@ -281,7 +238,7 @@ export function AiAssistantView({ isLive = false }) {
                       onClick={() => toggleObservation(conversation.id)}
                       className="flex items-center gap-1.5 text-xs font-mono font-bold text-neutral-400 hover:text-white uppercase transition-colors cursor-pointer"
                     >
-                      <span>DATOS TÉCNICOS OBSERVADOS ({conversation.steps.length})</span>
+                      <span>RESULTADOS TÉCNICOS ({conversation.steps.length})</span>
                       {expandedObservations[conversation.id] ? (
                         <ChevronUp className="h-3.5 w-3.5 text-primary" />
                       ) : (

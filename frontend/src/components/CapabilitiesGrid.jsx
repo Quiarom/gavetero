@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { X, RotateCw } from "lucide-react";
-import { mockSecurity } from "@/data/mockData";
 import { getRouterData } from "@/lib/desktop";
+
+const CAPABILITY_ALIASES = {
+  wireless_security: "wireless",
+  wps_state: "wps",
+  dmz_state: "dmz",
+  upnp_state: "upnp",
+  remote_management: "remote-management",
+  forwarding_rules: "forwarding"
+};
 
 const getCapabilityMeta = (key) => {
   switch (key) {
@@ -9,55 +17,55 @@ const getCapabilityMeta = (key) => {
       return {
         label: "Identidad del Dispositivo",
         path: "/v0/device",
-        desc: "Fabricante, modelo y versión de firmware auditada."
+        desc: "Fabricante, modelo y versión de firmware."
       };
     case "status":
       return {
         label: "Estado del Sistema y WAN",
         path: "/v0/status",
-        desc: "Enlace exterior activo, verificación de alcance y tiempo de actividad."
+        desc: "Estado del enlace WAN, alcance y tiempo de actividad."
       };
     case "clients":
       return {
         label: "Clientes DHCP",
         path: "/v0/clients",
-        desc: "Equipos activos con asignación de IP y MAC en la red local."
+        desc: "Concesiones DHCP observadas; no representan todos los equipos de la red."
       };
-    case "wireless_security":
+    case "wireless":
       return {
         label: "Seguridad Inalámbrica (Wi-Fi)",
         path: "/v0/security/wireless",
-        desc: mockSecurity.wireless.description
+        desc: "Configuración de seguridad inalámbrica."
       };
     case "dmz":
       return {
         label: "Zona Desmilitarizada (DMZ)",
         path: "/v0/security/dmz",
-        desc: mockSecurity.dmz.description
+        desc: "Configuración de la zona desmilitarizada."
       };
     case "forwarding":
       return {
         label: "Reenvío de Puertos",
         path: "/v0/security/forwarding",
-        desc: mockSecurity.forwarding.description
+        desc: "Configuración de las reglas de reenvío de puertos."
       };
     case "wps":
       return {
         label: "WPS (Wi-Fi Protected Setup)",
         path: "/v0/security/wps",
-        desc: mockSecurity.wps.description
+        desc: "Configuración de Wi-Fi Protected Setup."
       };
     case "upnp":
       return {
         label: "UPnP (Plug & Play)",
         path: "/v0/security/upnp",
-        desc: mockSecurity.upnp.description
+        desc: "Configuración de Universal Plug and Play."
       };
-    case "remote_management":
+    case "remote-management":
       return {
         label: "Gestión Remota",
         path: "/v0/security/remote-management",
-        desc: mockSecurity.remote_management.description
+        desc: "Configuración de la administración remota."
       };
     default:
       return {
@@ -77,11 +85,10 @@ const getStatusBadge = (state) => {
       };
     case "absent":
       return {
-        text: "AUSENTE (404)",
+        text: "AUSENTE",
         className: "border border-neutral-800 bg-neutral-900 text-neutral-500 font-mono text-[11px] font-bold uppercase"
       };
     case "unsupported_or_unverified":
-    case "unverified":
       return {
         text: "POR VERIFICAR",
         className: "border border-amber-500/40 bg-amber-500/10 text-amber-400 font-mono text-[11px] font-bold uppercase"
@@ -99,10 +106,36 @@ const getStatusBadge = (state) => {
   }
 };
 
+export function capabilityStateText(state, provenance) {
+  switch (state) {
+    case "verified":
+      return provenance === "fixture"
+        ? "Datos de fixture; no son evidencia de hardware."
+        : "La fuente consultada proporcionó datos.";
+    case "absent":
+      return "Sin observación; no implica que la función esté desactivada.";
+    case "unsupported_or_unverified":
+      return "Capacidad no verificada.";
+    default:
+      return "Observación no disponible.";
+  }
+}
+
+export function capabilityResponseText(response) {
+  if (response?.data?.state) return JSON.stringify(response.data, null, 2);
+  if (response?.status) return `HTTP ${response.status}: respuesta sin sobre /v0.`;
+  if (response?.error) return `Error: ${response.error}`;
+  return "Sin respuesta HTTP de la API.";
+}
+
 export function CapabilitiesGrid({ capabilities = {}, isLive = false }) {
   const [selectedCap, setSelectedCap] = useState(null);
   const [liveResponse, setLiveResponse] = useState(null);
   const [loadingLive, setLoadingLive] = useState(false);
+  const entries = new Map(Object.entries(capabilities).map(([key, state]) => {
+    const canonical = Object.hasOwn(CAPABILITY_ALIASES, key) ? CAPABILITY_ALIASES[key] : key;
+    return [canonical, capabilities[canonical] ?? state];
+  }));
 
   useEffect(() => {
     if (!selectedCap || !isLive) return;
@@ -132,7 +165,7 @@ export function CapabilitiesGrid({ capabilities = {}, isLive = false }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 font-sans">
-        {Object.entries(capabilities).map(([key, state]) => {
+        {Array.from(entries, ([key, state]) => {
           const meta = getCapabilityMeta(key);
           const badge = getStatusBadge(state);
 
@@ -199,17 +232,17 @@ export function CapabilitiesGrid({ capabilities = {}, isLive = false }) {
               <div>
                 <span className="text-neutral-400 block mb-1 text-[11px] uppercase">ESTADO EN EL CONTRATO:</span>
                 <div className="bg-black border border-neutral-800 p-3 text-xs text-neutral-300 font-sans">
-                  {capabilities[selectedCap] === "verified" && "✓ Verificado contra hardware real compatible."}
-                  {capabilities[selectedCap] === "absent" && "ℹ Característica ausente en este firmware (HTTP 404)."}
-                  {capabilities[selectedCap] === "unsupported_or_unverified" && "⏳ Capacidad reservada aún no observada en capturas."}
-                  {capabilities[selectedCap] === "unavailable" && "⚠ Servicio no disponible temporalmente (HTTP 503)."}
+                  {loadingLive ? "Consultando la observación..." : capabilityStateText(
+                    isLive ? liveResponse?.data?.state : entries.get(selectedCap),
+                    isLive ? liveResponse?.data?.provenance : "fixture"
+                  )}
                 </div>
               </div>
 
               {isLive && (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-neutral-400 text-[11px] uppercase">RESPUESTA EN VIVO DEL ROUTER:</span>
+                    <span className="text-neutral-400 text-[11px] uppercase">RESPUESTA DEL SERVICIO LOCAL:</span>
                     {loadingLive && (
                       <span className="flex items-center gap-1 text-[10px] text-primary">
                         <RotateCw className="h-2.5 w-2.5 animate-spin" />
@@ -230,12 +263,8 @@ export function CapabilitiesGrid({ capabilities = {}, isLive = false }) {
                   </div>
                   <pre className="bg-black border border-neutral-800 p-3 text-xs text-neutral-300 font-mono overflow-x-auto max-h-40 leading-tight">
                     {loadingLive
-                      ? "Consultando API en vivo..."
-                      : liveResponse?.data
-                      ? JSON.stringify(liveResponse.data, null, 2)
-                      : liveResponse?.error
-                      ? `Error: ${liveResponse.error}`
-                      : "Sin respuesta de la API"}
+                      ? "Consultando la API..."
+                      : capabilityResponseText(liveResponse)}
                   </pre>
                 </div>
               )}

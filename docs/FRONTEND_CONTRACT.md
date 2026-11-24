@@ -1,5 +1,8 @@
 # Frontend contract — router-core HTTP API
 
+> Historical design reference. For the current wire format and state meanings,
+> see the [draft /v0 observation contract](CONTRACT_V0.md).
+
 This document is the stable interface contract between the
 router-core backend and the third-party frontend. It is the
 only thing the frontend should depend on.

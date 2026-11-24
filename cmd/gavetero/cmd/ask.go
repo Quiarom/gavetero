@@ -60,8 +60,9 @@ func newAskCmd() *cobra.Command {
 		Short: "Investigate a network question with MiniMax M3",
 		Long: `ask sends a question to the local MiniMax M3 agent and prints
 the answer. The local runtime (router-core) is started
-automatically in mock mode (no network, no physical router
-required) for the duration of this command.
+automatically in mock mode (fixture files, no physical router
+required) for the duration of this command. --dry-run uses
+the deterministic agent without contacting GMI Cloud.
 
 With --live --host X, the runtime talks to a real router at
 X. The same HTTP API exposes the router's observations to
@@ -71,7 +72,7 @@ Output modes:
 
   human   the answer and a short summary of the tool calls
   json    the full JSON object returned by the agent
-  jsonl   one event per line: tool_call, observation, completed
+  jsonl   one compact chat result per line, with observations in steps[].result
 
 The default model is MiniMaxAI/MiniMax-M3, served by GMI
 Cloud. The fallback model is MiniMaxAI/MiniMax-M2.7 when
@@ -118,7 +119,7 @@ Resolution order for the API key (GMI):
 	cmd.Flags().StringVar(&model, "model", defaultModel,
 		"primary model identifier")
 	cmd.Flags().BoolVar(&live, "live", false,
-		"connect to a real router (default uses the embedded mock fixture)")
+		"connect to a real router (default uses mock fixture files)")
 	cmd.Flags().StringVar(&host, "host", "",
 		"router address for --live mode (e.g. 192.168.0.1)")
 	cmd.Flags().StringVar(&routerUser, "router-user", "admin",
@@ -159,7 +160,7 @@ func runAsk(stdout, stderr io.Writer, opts askOptions) error {
 	}
 
 	// 1. Resolve the API key. Precedence: env > keyring > error.
-	apiKey, err := resolveAPIKey()
+	keyEnv, apiKey, err := resolveAPIKey()
 	if err != nil && !opts.DryRun {
 		return err
 	}
@@ -212,25 +213,23 @@ func runAsk(stdout, stderr io.Writer, opts askOptions) error {
 		_ = routerCmd.Wait()
 	}()
 
-	// Wait for /v0/capabilities.
 	routerClient := &http.Client{Timeout: 2 * time.Second}
 	routerURL := "http://" + routerAddr
-	if err := waitForReady(ctx, routerClient, routerURL+"/v0/capabilities"); err != nil {
+	if err := waitForReady(ctx, routerClient, routerURL+"/healthz"); err != nil {
 		return fmt.Errorf("router-core never became ready at %s: %w", routerURL, err)
 	}
 
 	// 5. Start the router-core-agent sidecar.
-	agentCmd := exec.CommandContext(ctx, agentBin, buildAgentServeArgs(opts, agentAddr, routerURL)...)
+	agentCmd := exec.CommandContext(ctx, agentBin, buildAgentServeArgs(opts, agentAddr, routerURL, keyEnv)...)
 	if opts.VerboseAgent {
 		agentCmd.Stderr = stderr
 	} else {
 		agentCmd.Stderr = io.Discard
 	}
 	agentCmd.Stdout = io.Discard
-	// Inject the API key as an env var, not as a flag. The agent
-	// picks it up via GMI_SERVING_API_KEY automatically.
+	// Pass the name as a flag, but keep the key in the environment.
 	if apiKey != "" {
-		agentCmd.Env = append(os.Environ(), "GMI_SERVING_API_KEY="+apiKey)
+		agentCmd.Env = append(os.Environ(), keyEnv+"="+apiKey)
 	}
 	if err := agentCmd.Start(); err != nil {
 		return fmt.Errorf("start router-core-agent: %w", err)
@@ -323,17 +322,17 @@ func renderAskHuman(stdout io.Writer, result map[string]any, opts askOptions) er
 	return nil
 }
 
-func resolveAPIKey() (string, error) {
-	if env := os.Getenv("GMI_SERVING_API_KEY"); env != "" {
-		return env, nil
+func resolveAPIKey() (string, string, error) {
+	if key := strings.TrimSpace(os.Getenv(envVarName)); key != "" {
+		return envVarName, key, nil
 	}
-	if v, err := keyringGet("gavetero", "gmi-cloud-api-key"); err == nil && v != "" {
-		return v, nil
+	if key, err := keyringGet(keyringService, keyringAccount); err == nil && strings.TrimSpace(key) != "" {
+		return envVarName, strings.TrimSpace(key), nil
 	}
-	return "", fmt.Errorf(
-		"GMI API key not found.\n" +
-			"  - export GMI_SERVING_API_KEY=YOUR_KEY\n" +
-			"  - or run `gvt setup` to store the key in the OS credential store",
+	return envVarName, "", fmt.Errorf(
+		"GMI API key not found.\n"+
+			"  - export %s=YOUR_KEY\n"+
+			"  - or run `gvt setup` to store the key in the OS credential store", envVarName,
 	)
 }
 
@@ -390,13 +389,14 @@ func buildRouterServeArgs(opts askOptions, addr string) []string {
 // buildAgentServeArgs returns the argv slice for the
 // router-core-agent sidecar. router-core-agent is a flag-driven
 // binary (no subcommand); all options are passed as flags.
-func buildAgentServeArgs(opts askOptions, addr, routerURL string) []string {
+func buildAgentServeArgs(opts askOptions, addr, routerURL, keyEnv string) []string {
 	args := []string{
 		"--router-core-url", routerURL,
 		"--serve", addr,
 		"--question", opts.Question,
 		"--model", opts.Model,
 		"--timeout", fmt.Sprintf("%ds", int(opts.Timeout.Seconds())),
+		"--key-env", keyEnv,
 	}
 	if opts.DryRun {
 		args = append(args, "--dry-run")
@@ -409,9 +409,6 @@ func buildAgentServeArgs(opts askOptions, addr, routerURL string) []string {
 	return args
 }
 
-// renderAskJSONL is the shared JSONL renderer used by both
-// `gvt ask` and `gvt inspect --output jsonl`. Each observation
-// is a single line with kind+data.
 func renderAskJSONL(w io.Writer, result map[string]any) error {
 	b, err := json.Marshal(result)
 	if err != nil {

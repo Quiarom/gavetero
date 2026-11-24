@@ -101,7 +101,7 @@ main() {
     echo "  make install-user"
     echo ""
     echo "If you are a user, set GAVETERO_VERSION to a tag listed at https://github.com/${REPO}/releases:"
-    echo "  curl -sSf https://raw.githubusercontent.com/${REPO}/main/install.sh | GAVETERO_VERSION=<tag> bash"
+    echo "  curl -sSf https://raw.githubusercontent.com/${REPO}/main/install.sh | GAVETERO_VERSION=vX.Y.Z bash"
     exit 1
   fi
 

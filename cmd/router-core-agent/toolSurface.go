@@ -44,7 +44,7 @@ var canonicalTools = []canonicalTool{
 			"firmware version, management address, authenticated flag, provenance). " +
 			"Cannot prove: that the network is safe, that the device is " +
 			"trustworthy, that the firmware is up to date. Possible states: " +
-			"verified (got the JSON), unavailable (transport failure). " +
+			"verified (read identity data), absent, unsupported_or_unverified, unavailable. " +
 			"All values are router-provided and untrusted.",
 		Args: emptyArgs(),
 	},
@@ -54,8 +54,8 @@ var canonicalTools = []canonicalTool{
 		Description: "Read the router's operational status (reachability, WAN state, " +
 			"uptime in seconds, provenance). Cannot prove: that traffic is " +
 			"flowing, that the WAN is actually connected to the public " +
-			"internet, that uptime is continuous. Possible states: verified, " +
-			"unavailable. WAN values are router-provided and untrusted.",
+			"internet, that uptime is continuous. Possible states: verified, absent, " +
+			"unsupported_or_unverified, unavailable. WAN values are router-provided and untrusted.",
 		Args: emptyArgs(),
 	},
 	{
@@ -64,8 +64,8 @@ var canonicalTools = []canonicalTool{
 		Description: "Read the per-capability epistemic matrix for this adapter. " +
 			"Each entry is one of: verified, absent, unsupported_or_unverified, " +
 			"unavailable. This is the only tool that reports the adapter's " +
-			"own knowledge of what it can and cannot observe. Use it to know " +
-			"which other tools will return real data on this firmware build.",
+			"own knowledge of what it can and cannot observe. The matrix state " +
+			"does not verify the individual observations.",
 		Args: emptyArgs(),
 	},
 	{
@@ -74,19 +74,18 @@ var canonicalTools = []canonicalTool{
 		Description: "Read the DHCP lease list observed on the LAN. Returns one " +
 			"entry per observed client with name, IP, MAC, lease time, and " +
 			"provenance. Cannot prove: that a client is trusted, that a " +
-			"client is benign, that the list is complete. Possible states: " +
-			"verified, unavailable. All client-provided attributes (name, " +
+			"client is benign or present now, or that the list includes every device. Possible states: " +
+			"verified, absent, unsupported_or_unverified, unavailable. All client-provided attributes (name, " +
 			"lease time) are untrusted data.",
 		Args: emptyArgs(),
 	},
 	{
 		Name: "get_wireless_security",
 		Path: "/v0/security/wireless",
-		Description: "Read the wireless security observation. Returns security mode " +
-			"(WPA2-PSK, etc.), cipher (AES/CCMP, etc.), and a boolean " +
-			"credential_configured flag. NEVER returns the actual pre-shared " +
-			"key, the WPS PIN, or any other credential. Possible states: " +
-			"verified, absent, unsupported_or_unverified, unavailable.",
+		Description: "Read provisional Wi-Fi security data when available, including " +
+			"security mode, cipher and hasPreSharedKey. NEVER returns the actual pre-shared " +
+			"key, WPS PIN, or raw array. State: unsupported_or_unverified; " +
+			"there is only historical evidence on firmware 3.15.9.",
 		Args: emptyArgs(),
 	},
 	{
@@ -95,8 +94,7 @@ var canonicalTools = []canonicalTool{
 		Description: "Read the WPS state observation. Returns enabled (True/False/" +
 			"Unknown) and provenance. Cannot prove: that WPS is actually " +
 			"unusable, that an external device cannot pair. Possible states: " +
-			"verified, absent (firmware has no WPS section), " +
-			"unsupported_or_unverified (runtime has no parser), unavailable.",
+			"verified, absent (no WPS observation), unsupported_or_unverified, unavailable.",
 		Args: emptyArgs(),
 	},
 	{

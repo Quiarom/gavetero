@@ -112,6 +112,23 @@ func TestParseWirelessSecurity_Empty(t *testing.T) {
 	}
 }
 
+func TestParseWirelessSecurity_Incomplete(t *testing.T) {
+	if _, err := ParseWirelessSecurity([]byte(`<script>var wlanPara = new Array(0,0,3);</script>`)); !errors.Is(err, domain.ErrUnexpectedResponse) {
+		t.Fatalf("incomplete Wi-Fi observation: %v", err)
+	}
+}
+
+func TestParseDHCP_EmptyVersusMalformed(t *testing.T) {
+	result, err := ParseDHCP([]byte(`<script>var DHCPDynList = new Array();</script>`))
+	if err != nil || len(result.Clients) != 0 || result.Skipped != 0 {
+		t.Fatalf("empty lease list: %+v (%v)", result, err)
+	}
+	result, err = ParseDHCP([]byte(`<script>var DHCPDynList = new Array("test","bad-mac","192.0.2.1","00:30:00");</script>`))
+	if !errors.Is(err, domain.ErrUnexpectedResponse) || len(result.Clients) != 0 || result.Skipped != 1 {
+		t.Fatalf("malformed lease list: %+v (%v)", result, err)
+	}
+}
+
 func TestParserFailuresAndUnknown(t *testing.T) {
 	if _, err := ParseDHCP(fixture(t, "login_page.html")); !errors.Is(err, domain.ErrUnauthenticated) {
 		t.Fatalf("login err=%v", err)

@@ -26,7 +26,7 @@ func (a *Adapter) read(name string) ([]byte, bool, error) {
 func (a *Adapter) Identify(context.Context) (domain.DeviceInfo, error) {
 	info := domain.DeviceInfo{
 		Vendor: "TP-Link", Model: tplinkwr841v8.ModelName, ManagementAddress: "fixture",
-		Authenticated: domain.Unknown, Provenance: domain.ProvenanceFixture,
+		Authenticated: domain.Unknown, Provenance: domain.ProvenanceAbsent,
 	}
 	if body, exists, err := a.read("status.html"); err != nil {
 		return info, err
@@ -37,6 +37,7 @@ func (a *Adapter) Identify(context.Context) (domain.DeviceInfo, error) {
 		}
 		info.FirmwareVersion = domain.NewUntrusted(firmware, "router:status")
 		info.HardwareVersion = domain.NewUntrusted(hardware, "router:status")
+		info.Provenance = domain.ProvenanceFixture
 	}
 	return info, nil
 }
@@ -111,5 +112,5 @@ func (a *Adapter) Security(context.Context) (domain.SecurityState, error) {
 }
 
 func missingStatus() domain.RouterStatus {
-	return domain.RouterStatus{Reachable: domain.Unknown, WANStatus: domain.WANUnknown, Provenance: domain.ProvenanceFixture}
+	return domain.RouterStatus{Reachable: domain.Unknown, WANStatus: domain.WANUnknown, Provenance: domain.ProvenanceAbsent}
 }
