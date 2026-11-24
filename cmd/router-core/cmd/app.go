@@ -65,7 +65,7 @@ func probeApp(ctx context.Context, adapter domain.RouterAdapter, jsonOut bool) e
 		return actionable(err)
 	}
 	if jsonOut {
-		return printJSON(info)
+		return printAdapterJSON(adapter, info)
 	}
 	auth := "blocked: missing capture (see BLOCKED_CAPTURE.md)"
 	if info.Provenance == domain.ProvenanceFixture {
@@ -115,7 +115,7 @@ func inspectApp(ctx context.Context, adapter domain.RouterAdapter, jsonOut bool)
 		security.DMZEnabled, security.UPnPEnabled, security.RemoteManagementEnabled,
 	}
 	if jsonOut {
-		return printJSON(output)
+		return printAdapterJSON(adapter, output)
 	}
 	fmt.Printf("Reachable: %s\nWAN: %s\nClients: %s\nWPS: %s\nDMZ: %s\nUPnP: %s\nRemote management: %s\n",
 		output.Reachable, output.WAN, clientDisplay, output.WPS, output.DMZ,
@@ -130,6 +130,23 @@ func untrusted(value domain.Untrusted) string {
 		return "unknown"
 	}
 	return value.Value()
+}
+
+func printAdapterJSON(adapter domain.RouterAdapter, value any) error {
+	if _, mock := adapter.(*fixture.Adapter); !mock {
+		return printJSON(value)
+	}
+	body, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		return err
+	}
+	result["mode"] = "mock"
+	result["provenance"] = "fixture"
+	return printJSON(result)
 }
 
 // printJSON marshals v to indented JSON and writes to stdout.

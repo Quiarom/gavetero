@@ -40,7 +40,7 @@ from pre-1.0.
   "this router does not expose this surface" signal, not an
   error.
 
-The runtime distinguishes four "states" for capabilities:
+For live observations, the runtime distinguishes four "states" for capabilities:
 
 - `verified` — the capability was captured against the physical
   lab unit and the parser produces a real value.
@@ -53,6 +53,13 @@ The runtime distinguishes four "states" for capabilities:
 
 The frontend must represent these four states distinctly. Do
 not collapse to `true` / `false`.
+
+Mock runtime responses are test data, not hardware evidence. They include
+`mode: "mock"` and `provenance: "fixture"` on every observation. Successful
+reads and capability entries use `mock`, never `verified`; absent,
+unsupported, and unavailable results keep their states and mock context.
+Consumers must display this mock-only state distinctly from live states.
+See [the current /v0 contract](CONTRACT_V0.md).
 
 ## Endpoints
 
@@ -170,14 +177,14 @@ record per supported capability.
 ```
 
 `capabilities` is a map from capability name to state. The
-state values are exactly the four documented above
+live state values are exactly the four documented above
 (`verified`, `absent`, `unsupported_or_unverified`,
-`unavailable`).
+`unavailable`). Mock results substitute `mock` for successful reads.
 
 ### `GET /v0/security/<name>`
 
 Per-capability security observations. Reserved for future
-expansion; the runtime today only supports the four states
+expansion; the runtime today supports the four live states and the mock-only state
 plus a 503 when the underlying endpoint is not yet wired.
 
 | Name | Path |

@@ -92,7 +92,7 @@ func runServeCommand(args []string) error {
 	addr := fs.String("addr", "127.0.0.1:8484", "loopback HTTP listen address")
 	timeout := fs.Duration("timeout", 5*time.Second, "per-request timeout to the router")
 	mock := fs.Bool("mock", false, "run against a fixture-backed adapter (no network)")
-	mockPath := fs.String("mock-fixture", "", "path to a synthetic fixture (default: fixtures/synthetic/tplink-wr841n-v8)")
+	mockPath := fs.String("mock-fixture", "", "path to a synthetic fixture (default: embedded demo)")
 	passwordStdin := fs.Bool("password-stdin", false, "read the admin password from stdin (refuses if stdin is a TTY)")
 	username := fs.String("username", "admin", "admin username for the router login")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -108,12 +108,12 @@ func runServeCommand(args []string) error {
 	var store *sessionStore
 	if *mock {
 		fixturePath := *mockPath
-		if fixturePath == "" {
-			fixturePath = "fixtures/synthetic/tplink-wr841n-v8"
-		}
 		f := fixture.New(fixturePath)
 		adapter = f
 		store = &sessionStore{password: nil}
+		if fixturePath == "" {
+			fixturePath = "embedded demo"
+		}
 		fmt.Fprintf(os.Stderr, "router-core serve: mock mode, fixture=%s\n", fixturePath)
 	} else {
 		if !isRFC1918OrLoopback(*host) {
@@ -226,7 +226,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func registerRoutes(mux *http.ServeMux, adapter domain.RouterAdapter, store *sessionStore) {
+	_, mock := adapter.(*fixture.Adapter)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if mock {
+			writeJSON(w, http.StatusOK, map[string]any{"state": "ok", "http_status": 200, "mode": "mock", "provenance": "fixture"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"state": "ok", "http_status": 200})
 	})
 	readers := map[string]observationReader{
@@ -242,21 +247,50 @@ func registerRoutes(mux *http.ServeMux, adapter domain.RouterAdapter, store *ses
 		readers[name] = securityReader(adapter, name)
 	}
 	for name, read := range readers {
+		if mock {
+			read = mockReader(read)
+			readers[name] = read
+		}
 		prefix := "/v0/security/"
 		switch name {
 		case "device", "status", "clients":
 			prefix = "/v0/"
 		}
-		mux.HandleFunc(prefix+name, observationHandler(read))
+		mux.HandleFunc(prefix+name, observationHandlerWithMode(read, mock))
 	}
-	mux.HandleFunc("/v0/capabilities", observationHandler(capabilitiesReader(readers)))
+	read := capabilitiesReader(readers)
+	if mock {
+		read = mockReader(read)
+	}
+	mux.HandleFunc("/v0/capabilities", observationHandlerWithMode(read, mock))
 }
 
 func observationHandler(read observationReader) http.HandlerFunc {
+	return observationHandlerWithMode(read, false)
+}
+
+func mockReader(read observationReader) observationReader {
+	return func(ctx context.Context) domain.Observation[any] {
+		result := read(ctx)
+		if result.State == domain.Verified {
+			result.State = domain.Mock
+		}
+		result.Mode = "mock"
+		result.Provenance = domain.ProvenanceFixture
+		return result
+	}
+}
+
+func observationHandlerWithMode(read observationReader, mock bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
-			writeJSON(w, http.StatusMethodNotAllowed, observation(domain.Unavailable, "method not allowed", domain.ProvenanceAbsent, nil))
+			result := observation(domain.Unavailable, "method not allowed", domain.ProvenanceAbsent, nil)
+			if mock {
+				result.Mode = "mock"
+				result.Provenance = domain.ProvenanceFixture
+			}
+			writeJSON(w, http.StatusMethodNotAllowed, result)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)

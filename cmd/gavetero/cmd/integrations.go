@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 
+	skill "github.com/Quiarom/gavetero/skills/gavetero"
 	"github.com/spf13/cobra"
 )
 
@@ -30,7 +31,7 @@ func newIntegrationsCmd() *cobra.Command {
 Subcommands:
 
   gvt integrations install <hermes|opencode>
-      Copy skills/gavetero/SKILL.md into the agent's skill
+      Copy the embedded Gavetero skill into the agent's skill
       directory. The skill becomes available as a slash
       command (Hermes) or as a name-activatable tool
       (OpenCode, OMP).
@@ -64,18 +65,14 @@ func runIntegrationsInstall(stdout io.Writer, target string) error {
 	if err != nil {
 		return err
 	}
-	src, err := findSkillSource()
+	body, err := skill.Files.ReadFile("SKILL.md")
 	if err != nil {
-		return err
+		return fmt.Errorf("read embedded skill: %w", err)
 	}
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return fmt.Errorf("create %s: %w", dest, err)
 	}
 	dstFile := filepath.Join(dest, "SKILL.md")
-	body, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", src, err)
-	}
 	if err := os.WriteFile(dstFile, body, 0644); err != nil {
 		return fmt.Errorf("write %s: %w", dstFile, err)
 	}
@@ -114,41 +111,6 @@ func integrationTargetDir(target string) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown integration target %q (want hermes or opencode)", target)
 	}
-}
-
-func findSkillSource() (string, error) {
-	// The skill source lives in the repo at skills/gavetero/SKILL.md.
-	// We resolve it relative to the running executable:
-	//   <exe dir>/../../../skills/gavetero/SKILL.md
-	// (the executable is <repo>/bin/gavetero when built with `make`,
-	// and <repo>/cmd/gavetero/main when running `go run`).
-	exe, err := os.Executable()
-	if err == nil {
-		dir := filepath.Dir(exe)
-		// Try the install location first.
-		candidate := filepath.Join(dir, "..", "..", "skills", "gavetero", "SKILL.md")
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			return candidate, nil
-		}
-		// Then the source-tree layout.
-		candidate = filepath.Join(dir, "..", "..", "..", "skills", "gavetero", "SKILL.md")
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			return candidate, nil
-		}
-	}
-	// Fallback: look for skills/gavetero/SKILL.md in the current dir
-	// and a few parents (for `go test` running inside cmd/gavetero/).
-	wd, err := os.Getwd()
-	if err == nil {
-		for i := 0; i < 5; i++ {
-			candidate := filepath.Join(wd, "skills", "gavetero", "SKILL.md")
-			if _, statErr := os.Stat(candidate); statErr == nil {
-				return candidate, nil
-			}
-			wd = filepath.Dir(wd)
-		}
-	}
-	return "", fmt.Errorf("could not find skills/gavetero/SKILL.md (run from the repo root, or build with `make build` so the skill is co-located with the binary)")
 }
 
 func homeDir() string {

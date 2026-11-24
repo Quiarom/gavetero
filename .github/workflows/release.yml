@@ -20,6 +20,7 @@ jobs:
         with:
           distribution: stable
           version: '~> v2'
-          args: release --clean
+          # Per-target sidecar hooks share an embed directory; keep builds serial.
+          args: release --clean --parallelism 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -63,7 +63,7 @@ function LiveDashboard({ onWanStatusChange }) {
         if (cancelled) return;
         setObservations({ device, status, clients, capabilities });
         setFetchError(null);
-        onWanStatusChange?.(verifiedData(status)?.wanStatus ?? "unknown");
+        onWanStatusChange?.(successfulData(status)?.wanStatus ?? "unknown");
       })
       .catch((error) => {
         if (cancelled) return;
@@ -89,8 +89,8 @@ export function Dashboard({ isLive, onWanStatusChange }) {
   return isLive ? <LiveDashboard onWanStatusChange={onWanStatusChange} /> : <DashboardView />;
 }
 
-function verifiedData(response) {
-  return response?.status === 200 && response.data?.state === "verified"
+function successfulData(response) {
+  return response?.status === 200 && ["verified", "mock"].includes(response.data?.state)
     ? response.data.data
     : null;
 }
@@ -107,15 +107,15 @@ export function DashboardView({ isLive = false, observations = {}, fetchError, l
   const [showAdvancedTelemetry, setShowAdvancedTelemetry] = useState(false);
   const [copiedIp, setCopiedIp] = useState(false);
 
-  const identity = verifiedData(observations.device);
-  const status = verifiedData(observations.status);
+  const identity = successfulData(observations.device);
+  const status = successfulData(observations.status);
   const statusData = isLive ? status ?? EMPTY_STATUS : mockStatus;
   const hasIdentity = identity && (identity.authenticated === "true" || observations.device.data.provenance === "fixture");
   const deviceData = isLive ? (hasIdentity ? identity : EMPTY_DEVICE) : mockDevice;
   const leases = observations.clients?.data;
   const leaseRows = leases?.data;
   const hasLeaseRows = observations.clients?.status === 200 && Array.isArray(leaseRows)
-    && ((leases.state === "verified" && leaseRows.length > 0) || (leases.state === "absent" && leaseRows.length === 0));
+    && ((["verified", "mock"].includes(leases.state) && leaseRows.length > 0) || (leases.state === "absent" && leaseRows.length === 0));
   const clientsData = !isLive ? mockClients : hasLeaseRows ? {
     state: leases.state,
     clients: leaseRows.map((client) => ({
@@ -123,8 +123,8 @@ export function DashboardView({ isLive = false, observations = {}, fetchError, l
       name: client.name?.value || (typeof client.name === "string" ? client.name : null)
     }))
   } : { ...NO_CLIENTS, state: leases?.state === "unsupported_or_unverified" ? leases.state : "unavailable" };
-  const capabilities = isLive ? verifiedData(observations.capabilities) ?? {} : mockCapabilities.capabilities;
-  const fixtureSource = isLive && Object.values(observations).some((response) => response.data?.provenance === "fixture");
+  const capabilities = isLive ? successfulData(observations.capabilities) ?? {} : mockCapabilities.capabilities;
+  const fixtureSource = !isLive || Object.values(observations).some((response) => response.data?.provenance === "fixture");
   const errors = [];
   if (isLive && !loading) {
     if (fetchError) {
@@ -188,7 +188,7 @@ export function DashboardView({ isLive = false, observations = {}, fetchError, l
                 </span>
               </div>
             </div>
-            {fixtureSource && <p className="text-xs text-neutral-400">Incluye datos de fixture, no evidencia de hardware.</p>}
+            {fixtureSource && <p className="text-xs text-neutral-400">Modo: mock (datos de prueba, no es un router real).</p>}
           </div>
 
           {isLive && <button

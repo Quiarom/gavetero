@@ -459,14 +459,14 @@ func TestServe_FixtureProvenance(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"device", "status", "clients"} {
-		read(name, domain.Absent, domain.ProvenanceAbsent, "null")
+		read(name, domain.Absent, domain.ProvenanceFixture, "null")
 	}
-	read("capabilities", domain.Verified, domain.ProvenanceAbsent, "")
+	read("capabilities", domain.Mock, domain.ProvenanceFixture, "")
 	if err := os.WriteFile(filepath.Join(dir, "dhcp.html"), []byte(`<script>var DHCPDynList = new Array();</script>`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	read("clients", domain.Absent, domain.ProvenanceFixture, "[]")
-	read("capabilities", domain.Verified, domain.ProvenanceFixture, "")
+	read("capabilities", domain.Mock, domain.ProvenanceFixture, "")
 }
 
 func TestServe_RejectsNonLoopbackAddr(t *testing.T) {

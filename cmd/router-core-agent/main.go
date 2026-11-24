@@ -50,10 +50,11 @@ type observationStep struct {
 }
 
 type agentResult struct {
-	Answer string            `json:"answer"`
-	Model  string            `json:"model"`
-	Mode   string            `json:"mode"`
-	Steps  []observationStep `json:"steps"`
+	Answer     string            `json:"answer"`
+	Model      string            `json:"model"`
+	Mode       string            `json:"mode"`
+	Provenance domain.Provenance `json:"provenance,omitempty"`
+	Steps      []observationStep `json:"steps"`
 	// Events is the additive structured trace introduced in
 	// commit 8. It records tool_call, observation, and
 	// completed moments. The frontend can render a vertical
@@ -312,10 +313,22 @@ func executeQuestion(parent context.Context, opts options, question string) (age
 	logf("pregunta=%q", question)
 
 	apiKey := strings.TrimSpace(os.Getenv(opts.openrouterKeyEnv))
+	var result agentResult
+	var err error
 	if opts.dryRun || apiKey == "" {
-		return runStub(ctx, routerClient, opts, question, nil)
+		result, err = runStub(ctx, routerClient, opts, question, nil)
+	} else {
+		result, err = runLive(ctx, opts, routerClient, apiKey, question)
 	}
-	return runLive(ctx, opts, routerClient, apiKey, question)
+	for _, step := range result.Steps {
+		envelope, decodeErr := domain.DecodeObservation(step.Result)
+		if decodeErr == nil && envelope.Mode == "mock" {
+			result.Mode = "mock"
+			result.Provenance = domain.ProvenanceFixture
+			break
+		}
+	}
+	return result, err
 }
 
 func stepFromObservation(toolName string, value observation) observationStep {
@@ -368,7 +381,7 @@ func (c *routerCoreClient) get(ctx context.Context, path string) (observation, e
 	if err != nil {
 		return observation{}, fmt.Errorf("decode %s (HTTP %d): %w", path, response.StatusCode, err)
 	}
-	if response.StatusCode != http.StatusOK && envelope.State == domain.Verified {
+	if response.StatusCode != http.StatusOK && (envelope.State == domain.Verified || envelope.State == domain.Mock) {
 		return observation{}, fmt.Errorf("%s returned verified data with HTTP %d", path, response.StatusCode)
 	}
 	return observation{Path: path, Status: response.StatusCode, Body: body, Envelope: envelope}, nil

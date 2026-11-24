@@ -33,7 +33,7 @@ func TestAskDryRunUsesCLIKeyEnvironment(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Mode != "stub" || !strings.Contains(result.Answer, "GMI_SERVING_API_KEY") ||
+	if result.Mode != "mock" || !strings.Contains(result.Answer, "GMI_SERVING_API_KEY") ||
 		strings.Contains(result.Answer, "OPENROUTER_API_KEY") {
 		t.Fatalf("unexpected dry-run response: mode=%q answer=%q", result.Mode, result.Answer)
 	}

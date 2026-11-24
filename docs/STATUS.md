@@ -17,6 +17,14 @@ AI model reason about what the router is doing.
 
 ## What's actually been built
 
+Portable mock demo output is explicitly test data, not a real router.
+Mock JSON observations carry `mode: "mock"` and `provenance: "fixture"`.
+Successful fixture reads use `state: "mock"`, never `verified`; absent,
+unsupported, and unavailable results retain their state and mock context.
+Live observations keep the four-state vocabulary and unchanged JSON.
+The fixture set and installable Gavetero skill are embedded in the binary.
+See [the /v0 draft contract](CONTRACT_V0.md).
+
 This is a **read-only** tool. It cannot change the router's settings,
 reboot it, or do anything destructive. It can only look.
 

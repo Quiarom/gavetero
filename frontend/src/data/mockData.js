@@ -1,4 +1,5 @@
 export const mockDevice = {
+  mode: "mock",
   vendor: "TP-Link",
   model: "TL-WR841N/ND",
   hardwareVersion: {
@@ -17,6 +18,7 @@ export const mockDevice = {
 };
 
 export const mockStatus = {
+  mode: "mock",
   reachable: "true",
   wanStatus: "connected",
   uptimeSeconds: 20000,
@@ -24,7 +26,9 @@ export const mockStatus = {
 };
 
 export const mockClients = {
-  state: "verified",
+  state: "mock",
+  mode: "mock",
+  provenance: "fixture",
   clients: [
     {
       name: "omarchy-laptop",
@@ -48,10 +52,13 @@ export const mockClients = {
 };
 
 export const mockCapabilities = {
+  state: "mock",
+  mode: "mock",
+  provenance: "fixture",
   capabilities: {
-    device: "verified",
-    status: "verified",
-    clients: "verified",
+    device: "mock",
+    status: "mock",
+    clients: "mock",
     wireless_security: "unsupported_or_unverified",
     wps: "unsupported_or_unverified",
     dmz: "unsupported_or_unverified",
@@ -62,16 +69,18 @@ export const mockCapabilities = {
 };
 
 const fixtureObservation = (data) => ({
-  state: "verified",
-  reason: "Ejemplo sintético de fixture.",
+  state: "mock",
+  mode: "mock",
+  reason: "Mock: datos de prueba, no es un router real.",
   provenance: "fixture",
   data
 });
 
 const unverifiedSecurity = (reason) => ({
   state: "unsupported_or_unverified",
+  mode: "mock",
   reason,
-  provenance: "absent",
+  provenance: "fixture",
   data: null
 });
 
@@ -85,6 +94,6 @@ export const mockObservations = {
   }))),
   "/v0/capabilities": fixtureObservation(mockCapabilities.capabilities),
   "/v0/security/wireless": unverifiedSecurity("Solo hay evidencia histórica para el firmware 3.15.9; el fixture no aporta una lectura Wi-Fi."),
-  "/v0/security/wps": unverifiedSecurity("El fixture no aporta una lectura verificada de WPS."),
-  "/v0/security/dmz": unverifiedSecurity("El fixture no aporta una lectura verificada de DMZ.")
+  "/v0/security/wps": unverifiedSecurity("Los datos de prueba no aportan una lectura confirmada de WPS."),
+  "/v0/security/dmz": unverifiedSecurity("Los datos de prueba no aportan una lectura confirmada de DMZ.")
 };

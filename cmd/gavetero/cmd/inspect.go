@@ -2,8 +2,8 @@
 // as a sidecar and queries its HTTP API, formatting the result
 // for human or machine consumption.
 //
-// The default mock mode uses synthetic fixture files from the
-// working directory and does not contact a router.
+// The default mock mode uses embedded mock test data
+// and does not contact a router.
 // With --live --host X, the sidecar talks to a real router at
 // X (default port 80). The same HTTP API exposes the router's
 // observations to gavetero inspect.
@@ -52,9 +52,8 @@ func newInspectCmd() *cobra.Command {
 		Short: "Show the current router observations",
 		Long: `Run router-core as a sidecar and query its HTTP API.
 
-By default, the sidecar runs in mock mode and reads synthetic
-fixture files from the working directory. The fixture is not
-embedded; missing files yield absent observations.
+By default, the sidecar runs in mock mode and reads embedded
+mock test data. No checkout or router is required.
 
 With --live --host X, the sidecar talks to a real router at
 address X (default port 80). Use --router-user and
@@ -179,18 +178,19 @@ func inspectObservations(ctx context.Context, stdout io.Writer, client *http.Cli
 	}
 
 	var err error
+	var result map[string]any
 	switch opts.Output {
 	case "json":
-		err = writeJSON(stdout, map[string]any{
+		result = map[string]any{
 			"router":       inspectSource(opts),
 			"mode":         inspectMode(opts),
 			"capabilities": observations["capabilities"],
 			"device":       observations["device"],
 			"status":       observations["status"],
 			"clients":      observations["clients"],
-		})
+		}
 	case "jsonl":
-		err = renderAskJSONL(stdout, map[string]any{
+		result = map[string]any{
 			"kind":    "inspect",
 			"source":  inspectSource(opts),
 			"mode":    inspectMode(opts),
@@ -198,9 +198,19 @@ func inspectObservations(ctx context.Context, stdout io.Writer, client *http.Cli
 			"status":  observations["status"],
 			"clients": observations["clients"],
 			"caps":    observations["capabilities"],
-		})
+		}
 	default:
 		err = renderInspectHuman(stdout, observations, opts)
+	}
+	if result != nil {
+		if !opts.Live {
+			result["provenance"] = domain.ProvenanceFixture
+		}
+		if opts.Output == "jsonl" {
+			err = renderAskJSONL(stdout, result)
+		} else {
+			err = writeJSON(stdout, result)
+		}
 	}
 	if err != nil {
 		return err
@@ -215,7 +225,7 @@ func inspectSource(opts inspectOptions) string {
 	if opts.Live {
 		return "live router at " + opts.Host
 	}
-	return "mock mode (fixture files)"
+	return "mock mode (test data, not a real router)"
 }
 
 func inspectMode(opts inspectOptions) string {
@@ -234,7 +244,7 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 			return fmt.Errorf("decode %s data: %w", name, err)
 		}
 	}
-	modeLabel := "mock (fixture files, no router connection)"
+	modeLabel := "mock (test data, not a real router)"
 	if opts.Live {
 		modeLabel = "live (router at " + opts.Host + ")"
 	}
@@ -245,7 +255,7 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 	fmt.Fprintln(stdout)
 	for _, name := range []string{"device", "status", "clients", "capabilities"} {
 		result := observations[name]
-		fmt.Fprintf(stdout, "%s: %s (%s; %s)\n", name, result.State, result.Reason, result.Provenance)
+		fmt.Fprintf(stdout, "%s: %s (%s; %s)\n", name, inspectStateLabel(string(result.State), opts), result.Reason, result.Provenance)
 	}
 	fmt.Fprintln(stdout)
 	if len(device) > 0 {
@@ -283,7 +293,7 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 		seen := map[string]bool{}
 		for _, k := range order {
 			if v, ok := caps[k]; ok {
-				fmt.Fprintf(stdout, "  %-22s %s\n", k, v)
+				fmt.Fprintf(stdout, "  %-22s %s\n", k, inspectStateLabel(v, opts))
 				seen[k] = true
 			}
 		}
@@ -295,7 +305,7 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 		}
 		if len(extras) > 0 {
 			for _, k := range extras {
-				fmt.Fprintf(stdout, "  %-22s %s\n", k, caps[k])
+				fmt.Fprintf(stdout, "  %-22s %s\n", k, inspectStateLabel(caps[k], opts))
 			}
 		}
 		fmt.Fprintln(stdout)
@@ -312,11 +322,30 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 		fmt.Fprintln(stdout)
 	}
 	fmt.Fprintln(stdout, "Legend:")
+	if !opts.Live {
+		fmt.Fprintln(stdout, "  mock                           test data, not a real router")
+		fmt.Fprintln(stdout, "  mock/absent                    test data did not yield the observation")
+		fmt.Fprintln(stdout, "  mock/unsupported_or_unverified support has not been confirmed")
+		fmt.Fprintln(stdout, "  mock/unavailable               could not obtain or interpret the test data")
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, "Read your real router: gvt inspect --live --host <router-ip>")
+		return nil
+	}
 	fmt.Fprintln(stdout, "  verified                     adapter read the value")
 	fmt.Fprintln(stdout, "  absent                       source did not yield the observation")
 	fmt.Fprintln(stdout, "  unsupported_or_unverified    support has not been verified")
 	fmt.Fprintln(stdout, "  unavailable                  could not obtain or interpret the observation")
 	return nil
+}
+
+func inspectStateLabel(state string, opts inspectOptions) string {
+	if opts.Live {
+		return state
+	}
+	if state == string(domain.Verified) || state == string(domain.Mock) {
+		return "mock"
+	}
+	return "mock/" + state
 }
 
 // flattenMapValue returns the inner string of an Untrusted

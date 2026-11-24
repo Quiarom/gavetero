@@ -4,19 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
-	"path/filepath"
 
+	synthetic "github.com/Quiarom/gavetero/fixtures/synthetic/tplink-wr841n-v8"
 	"github.com/Quiarom/gavetero/internal/adapters/tplinkwr841v8"
 	"github.com/Quiarom/gavetero/internal/domain"
 )
 
-type Adapter struct{ dir string }
+type Adapter struct{ files fs.FS }
 
-func New(dir string) *Adapter { return &Adapter{dir: dir} }
+func New(dir string) *Adapter {
+	if dir == "" {
+		return &Adapter{files: synthetic.Files}
+	}
+	return &Adapter{files: os.DirFS(dir)}
+}
 
 func (a *Adapter) read(name string) ([]byte, bool, error) {
-	body, err := os.ReadFile(filepath.Join(a.dir, name))
+	body, err := fs.ReadFile(a.files, name)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, false, nil
 	}
