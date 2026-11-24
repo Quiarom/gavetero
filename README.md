@@ -43,7 +43,7 @@ the agent sidecar. The CLI spawns them as needed:
           │
    ┌──────┴───────┐
    │  TP-Link    │   ← real router on the LAN
-   │  WR841N     │      OR the embedded fixture
+   │  WR841N     │      OR the synthetic fixture files
    │  or other   │      for first-time use
    └─────────────┘
 ```
@@ -52,6 +52,8 @@ The runtime reads the router's web UI over HTTP, parses
 it into typed observations (the four knowledge states:
 `verified`, `absent`, `unsupported_or_unverified`, `unavailable`),
 and exposes those via `http://127.0.0.1:8484/v0/...`.
+See the [draft /v0 observation contract](docs/CONTRACT_V0.md) for the
+shared HTTP, CLI, and agent result format.
 The agent, called by the model, decides which observation
 to request next. The model reasons about the answer;
 the runtime enforces the evidence.
@@ -61,17 +63,17 @@ the runtime enforces the evidence.
 Gavetero does not invent. The runtime is read-only.
 The four-state vocabulary means:
 
-- `verified` — the runtime read the value from the router
-- `absent` — the firmware does not implement the capability
-- `unsupported_or_unverified` — Gavetero has no parser for it
-- `unavailable` — transport failure (timeout, refused, etc.)
+- `verified` — the named source yielded usable data
+- `absent` — no observation was present; this does not mean the feature is off
+- `unsupported_or_unverified` — support for this observation is not verified
+- `unavailable` — the observation could not be obtained or interpreted
 
-The default mode uses an embedded fixture (a sanitized
-capture of a TP-Link WR841N on firmware 3.15.9) so first-time
-users can try the CLI without hardware. With `--live --host X`
-it talks to a real router at X. The fixture is real data
-(sanitized at capture time); the live mode is real data
-(read at run time). Mock data is not invented.
+The default mode replays synthetic files from
+`fixtures/synthetic/tplink-wr841n-v8` relative to the working directory.
+The sidecars are embedded; the fixture files are not. If the files are
+missing, the corresponding observations are absent with no fixture
+provenance. Fixtures are not hardware evidence. With `--live --host X`,
+the CLI reads from the router at X.
 
 ## Install
 
@@ -133,21 +135,24 @@ gvt ask "¿Qué tan expuesta está mi red Wi-Fi?"
 ## Quick start (no router, first try)
 
 ```sh
-# Without setup, gvt runs in mock mode using the embedded fixture
-# (a sanitized TP-Link WR841N capture). No GMI key required.
+# Run from the checkout to replay the synthetic fixture files.
+# No GMI key or router required.
 gvt inspect
-#   Mode:  mock (fixture-backed, no network)
-#   Device: TL-WR841N/ND v8.4 on firmware 3.15.9
+#   Mode:  mock (fixture files, no router connection)
 #   ...
 
 gvt ask "Is my Wi-Fi exposed?" --dry-run
 #   Tools called: 3
-#     1. get_security /v0/security/dmz -> 404
-#     2. get_security /v0/security/forwarding -> 404
-#     3. get_security /v0/security/upnp -> 404
+#     1. get_security /v0/security/wireless -> 404
+#     2. get_security /v0/security/wps -> 404
+#     3. get_security /v0/security/remote-management -> 404
 #   Model: MiniMaxAI/MiniMax-M3
 #   Mode:  stub
 ```
+
+`--dry-run` uses the deterministic agent without calling GMI Cloud.
+With `gvt ask --output jsonl`, each invocation emits one compact chat result;
+the observation envelopes are in `steps[].result`.
 
 ## Commands
 
@@ -170,16 +175,13 @@ vocabulary; the user sees the same vocabulary in the output.
 
 | State | Meaning | Example |
 |---|---|---|
-| `verified` | runtime read the value | SSID: TP-LINK_CBEC16 |
-| `absent` | firmware does not implement | WPS on a router without WPS |
-| `unsupported_or_unverified` | Gavetero has no parser | the userRpm page on a non-TP-Link |
-| `unavailable` | transport failure | timeout connecting to the router |
+| `verified` | source yielded usable data | firmware version read from a fixture |
+| `absent` | no observation was present | a read DHCP list contained no rows |
+| `unsupported_or_unverified` | support is not verified | provisional Wi-Fi fields |
+| `unavailable` | read or interpretation failed | timeout connecting to the router |
 
-The mock mode uses the embedded fixture. Where the fixture
-parses a value, the state is `verified`. Where the firmware
-does not implement a capability, the state is `absent`. The
-agent does not invent `verified` for things the runtime
-could not read.
+Mock observations identify replayed data with `provenance: "fixture"`.
+Without files to replay, they use `provenance: "absent"`.
 
 ## Architecture
 

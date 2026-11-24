@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   AlertCircle, 
   RotateCw,
@@ -33,15 +33,14 @@ const EMPTY_STATUS = {
   wanStatus: "unknown",
   uptimeSeconds: null
 };
-const EMPTY_CLIENTS = { state: "unavailable", clients: [] };
-const EMPTY_CAPABILITIES = { capabilities: {} };
+const NO_CLIENTS = { state: "unavailable", clients: null };
+const WAN_LABELS = {
+  connected: "WAN CONECTADA",
+  disconnected: "WAN DESCONECTADA",
+  connecting: "WAN CONECTANDO",
+  disabled: "WAN DESHABILITADA"
+};
 
-/**
- * Convierte segundos observados en una duración breve y legible.
- *
- * @param {number | null | undefined} seconds Segundos informados por el router.
- * @returns {string} Duración formateada o estado no disponible.
- */
 function formatUptime(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return "NO DISPONIBLE";
   const days = Math.floor(seconds / 86400);
@@ -50,125 +49,121 @@ function formatUptime(seconds) {
   return `${days ? `${days}d ` : ""}${hours}h ${minutes}m`;
 }
 
+function LiveDashboard({ onWanStatusChange }) {
+  const [observations, setObservations] = useState({});
+  const [fetchError, setFetchError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const paths = ["/v0/device", "/v0/status", "/v0/clients", "/v0/capabilities"];
+    Promise.all(paths.map(getRouterData))
+      .then(([device, status, clients, capabilities]) => {
+        if (cancelled) return;
+        setObservations({ device, status, clients, capabilities });
+        setFetchError(null);
+        onWanStatusChange?.(verifiedData(status)?.wanStatus ?? "unknown");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setObservations({});
+        setFetchError(error instanceof Error ? error.message : "No se pudo consultar el servicio local");
+        onWanStatusChange?.("unknown");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onWanStatusChange, revision]);
+
+  return <DashboardView isLive observations={observations} fetchError={fetchError} loading={loading} refreshData={() => {
+    setLoading(true);
+    setRevision(revision + 1);
+  }} />;
+}
+
 export function Dashboard({ isLive, onWanStatusChange }) {
-  const [liveDeviceData, setLiveDeviceData] = useState(null);
-  const [liveStatusData, setLiveStatusData] = useState(null);
-  const [liveClientsData, setLiveClientsData] = useState(null);
-  const [liveCapsData, setLiveCapsData] = useState(null);
-  const [liveError, setLiveError] = useState(null);
-  const [loading, setLoading] = useState(false);
+  return isLive ? <LiveDashboard onWanStatusChange={onWanStatusChange} /> : <DashboardView />;
+}
+
+function verifiedData(response) {
+  return response?.status === 200 && response.data?.state === "verified"
+    ? response.data.data
+    : null;
+}
+
+function isIPAddress(value) {
+  if (typeof value !== "string") return false;
+  if (/^(?:0|[1-9]\d{0,2})(?:\.(?:0|[1-9]\d{0,2})){3}$/.test(value)) {
+    return value.split(".").every((octet) => Number(octet) <= 255);
+  }
+  return value.includes(":") && /^[\da-f:.]+$/i.test(value) && URL.canParse(`http://[${value}]/`);
+}
+
+export function DashboardView({ isLive = false, observations = {}, fetchError, loading, refreshData }) {
   const [showAdvancedTelemetry, setShowAdvancedTelemetry] = useState(false);
   const [copiedIp, setCopiedIp] = useState(false);
 
-  const deviceData = isLive ? liveDeviceData || EMPTY_DEVICE : mockDevice;
-  const statusData = isLive ? liveStatusData || EMPTY_STATUS : mockStatus;
-  const clientsData = isLive ? liveClientsData || EMPTY_CLIENTS : mockClients;
-  const capsData = isLive ? liveCapsData || EMPTY_CAPABILITIES : mockCapabilities;
+  const identity = verifiedData(observations.device);
+  const status = verifiedData(observations.status);
+  const statusData = isLive ? status ?? EMPTY_STATUS : mockStatus;
+  const hasIdentity = identity && (identity.authenticated === "true" || observations.device.data.provenance === "fixture");
+  const deviceData = isLive ? (hasIdentity ? identity : EMPTY_DEVICE) : mockDevice;
+  const leases = observations.clients?.data;
+  const leaseRows = leases?.data;
+  const hasLeaseRows = observations.clients?.status === 200 && Array.isArray(leaseRows)
+    && ((leases.state === "verified" && leaseRows.length > 0) || (leases.state === "absent" && leaseRows.length === 0));
+  const clientsData = !isLive ? mockClients : hasLeaseRows ? {
+    state: leases.state,
+    clients: leaseRows.map((client) => ({
+      ...client,
+      name: client.name?.value || (typeof client.name === "string" ? client.name : null)
+    }))
+  } : { ...NO_CLIENTS, state: leases?.state === "unsupported_or_unverified" ? leases.state : "unavailable" };
+  const capabilities = isLive ? verifiedData(observations.capabilities) ?? {} : mockCapabilities.capabilities;
+  const fixtureSource = isLive && Object.values(observations).some((response) => response.data?.provenance === "fixture");
+  const errors = [];
+  if (isLive && !loading) {
+    if (fetchError) {
+      errors.push(fetchError);
+    } else {
+      if (!hasIdentity) {
+        errors.push(identity ? "No se pudo confirmar la autenticación del router" : observations.device?.data?.reason || "No se pudo identificar el router");
+      }
+      if (!status) errors.push(observations.status?.data?.reason || "El estado WAN no está disponible");
+      if (!hasLeaseRows) errors.push(leases?.reason || "Las concesiones DHCP no están disponibles");
+    }
+  }
 
+  const managementAddress = deviceData.managementAddress;
+  const hasManagementIP = isIPAddress(managementAddress);
   const handleCopyIp = () => {
-    const ip = deviceData.managementAddress;
-    if (!ip) return;
-    navigator.clipboard.writeText(ip);
+    navigator.clipboard.writeText(managementAddress);
     setCopiedIp(true);
     setTimeout(() => setCopiedIp(false), 2000);
   };
 
-  const fetchLiveData = useCallback(async () => {
-    setLoading(true);
-    setLiveError(null);
-
-    try {
-      const [deviceResponse, statusResponse, clientsResponse, capabilitiesResponse] =
-        await Promise.all([
-          getRouterData("/v0/device"),
-          getRouterData("/v0/status"),
-          getRouterData("/v0/clients"),
-          getRouterData("/v0/capabilities")
-        ]);
-
-      const errors = [];
-      if (deviceResponse.status === 200 && deviceResponse.data?.authenticated === "true") {
-        setLiveDeviceData(deviceResponse.data);
-      } else {
-        setLiveDeviceData(null);
-        errors.push(deviceResponse.data?.reason || "No se pudo identificar el router");
-      }
-
-      if (statusResponse.status === 200) {
-        setLiveStatusData(statusResponse.data);
-        if (onWanStatusChange && statusResponse.data?.wanStatus) {
-          onWanStatusChange(statusResponse.data.wanStatus);
-        }
-      } else {
-        setLiveStatusData(null);
-        errors.push(statusResponse.data?.reason || "El estado WAN no está disponible");
-      }
-
-      if (clientsResponse.status === 200 && Array.isArray(clientsResponse.data?.clients)) {
-        setLiveClientsData({
-          ...clientsResponse.data,
-          clients: clientsResponse.data.clients.map((client) => ({
-            ...client,
-            name: client.name?.value || client.name || "Dispositivo sin nombre",
-            lease: client.leaseTime?.value || client.lease || "No disponible"
-          }))
-        });
-      } else {
-        setLiveClientsData(null);
-        errors.push(clientsResponse.data?.reason || "Los clientes conectados no están disponibles");
-      }
-
-      if (capabilitiesResponse.status === 200 && capabilitiesResponse.data?.capabilities) {
-        setLiveCapsData(capabilitiesResponse.data);
-      } else {
-        setLiveCapsData(null);
-      }
-
-      setLiveError(errors.length > 0 ? [...new Set(errors)].join(" · ") : null);
-    } catch (error) {
-      setLiveError(
-        error instanceof Error
-          ? error.message
-          : "No se pudieron obtener observaciones reales del router"
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [onWanStatusChange]);
-
-  const refreshData = () => {
-    if (isLive) {
-      fetchLiveData();
-    }
-  };
-
-  useEffect(() => {
-    if (!isLive) return;
-
-    let cancelled = false;
-    const run = async () => {
-      await Promise.resolve();
-      if (!cancelled) {
-        fetchLiveData();
-      }
-    };
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [isLive, fetchLiveData]);
-
-  const isWanConnected = statusData.wanStatus === "connected" || statusData.reachable === "true";
-  const clientCount = clientsData.clients?.length || 0;
+  const wanLabel = WAN_LABELS[statusData.wanStatus] ?? "WAN NO DISPONIBLE";
+  const wanTone = statusData.wanStatus === "connected"
+    ? ["bg-emerald-500", "text-emerald-400"]
+    : statusData.wanStatus === "disconnected" || statusData.wanStatus === "disabled"
+      ? ["bg-rose-500", "text-rose-400"]
+      : ["bg-neutral-500", "text-neutral-300"];
+  const leaseSummary = clientsData.clients
+    ? `${clientsData.clients.length} CONCESIONES DHCP`
+    : clientsData.state === "unsupported_or_unverified" ? "POR VERIFICAR" : "NO DISPONIBLE";
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-5 space-y-6 bg-black text-white font-sans">
       {/* Live Error Notification */}
-      {liveError && (
-        <div className="border-2 border-neutral-700 bg-neutral-900 p-3 text-xs text-rose-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 font-mono">
+      {errors.length > 0 && (
+        <div role="alert" className="border-2 border-neutral-700 bg-neutral-900 p-3 text-xs text-rose-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 font-mono">
           <div className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
-            <span>{liveError}</span>
+            <span>{[...new Set(errors)].join(" · ")}</span>
           </div>
           <span className="bg-black px-2 py-0.5 text-rose-300 border border-neutral-700 text-xs">
             Observación parcial o no disponible
@@ -187,51 +182,58 @@ export function Dashboard({ isLive, onWanStatusChange }) {
                 {deviceData.vendor} <span className="text-primary">{deviceData.model}</span>
               </h1>
               <div className="flex items-center gap-1.5 px-2.5 py-0.5 border border-neutral-800 bg-neutral-900 font-mono text-xs">
-                <span className={`h-2 w-2 rounded-full ${isWanConnected ? "bg-emerald-500 animate-pulse" : "bg-rose-500"}`} />
-                <span className={`font-bold uppercase ${isWanConnected ? "text-emerald-400" : "text-rose-400"}`}>
-                  {isWanConnected ? "INTERNET CONECTADO" : "SIN CONEXIÓN"}
+                <span className={`h-2 w-2 rounded-full ${wanTone[0]}`} />
+                <span className={`font-bold uppercase ${wanTone[1]}`}>
+                  {wanLabel}
                 </span>
               </div>
             </div>
+            {fixtureSource && <p className="text-xs text-neutral-400">Incluye datos de fixture, no evidencia de hardware.</p>}
           </div>
 
-          <button
+          {isLive && <button
             onClick={refreshData}
             disabled={loading}
             className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border-2 border-neutral-700 text-xs font-mono font-bold uppercase tracking-wider text-white flex items-center gap-2 transition-colors cursor-pointer self-start sm:self-auto disabled:opacity-50"
           >
             <RotateCw className={`h-3.5 w-3.5 ${loading ? "animate-spin text-primary" : ""}`} />
             <span>{loading ? "Actualizando..." : "Actualizar"}</span>
-          </button>
+          </button>}
         </div>
 
         {/* Minimal Horizontal Telemetry Ribbon (Brutalist style with border-l-2) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 pt-1 font-mono text-xs">
           {/* IP con 1-click copy */}
           <div className="border-l-2 border-primary pl-3 space-y-1 bg-black/40 py-1.5 pr-2">
-            <span className="text-neutral-500 uppercase text-xs block font-medium">IP DE GESTIÓN:</span>
-            <button
-              onClick={handleCopyIp}
-              className="flex items-center gap-1.5 font-bold text-white hover:text-primary text-sm transition-colors cursor-pointer text-left w-full group"
-              title="Clic para copiar dirección IP"
-            >
-              <span>{deviceData.managementAddress || "NO DISPONIBLE"}</span>
-              {copiedIp ? (
-                <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-              ) : (
-                <Copy className="h-3.5 w-3.5 text-neutral-500 group-hover:text-primary shrink-0" />
-              )}
-              <span className="text-[10px] text-neutral-500 group-hover:text-primary">
-                {copiedIp ? "¡COPIADA!" : "[COPIAR]"}
-              </span>
-            </button>
+            <span className="text-neutral-500 uppercase text-xs block font-medium">
+              {managementAddress === "fixture" ? "FUENTE DE IDENTIDAD:" : "IP DE GESTIÓN:"}
+            </span>
+            {hasManagementIP ? (
+              <button
+                onClick={handleCopyIp}
+                className="flex items-center gap-1.5 font-bold text-white hover:text-primary text-sm transition-colors cursor-pointer text-left w-full group"
+                title="Clic para copiar dirección IP"
+              >
+                <span>{managementAddress}</span>
+                {copiedIp ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5 text-neutral-500 group-hover:text-primary shrink-0" />
+                )}
+                <span className="text-[10px] text-neutral-500 group-hover:text-primary">
+                  {copiedIp ? "¡COPIADA!" : "[COPIAR]"}
+                </span>
+              </button>
+            ) : (
+              <span className="font-bold text-white text-sm">{managementAddress === "fixture" ? "FIXTURE" : "NO DISPONIBLE"}</span>
+            )}
           </div>
 
           {/* Dispositivos Activos */}
           <div className="border-l-2 border-neutral-800 pl-3 space-y-1 bg-black/40 py-1.5 pr-2">
-            <span className="text-neutral-500 uppercase text-xs block font-medium">DISPOSITIVOS:</span>
+            <span className="text-neutral-500 uppercase text-xs block font-medium">DHCP:</span>
             <span className="font-bold text-white text-sm block">
-              {clientCount} CONECTADOS
+              {leaseSummary}
             </span>
           </div>
 
@@ -239,7 +241,7 @@ export function Dashboard({ isLive, onWanStatusChange }) {
           <div className="border-l-2 border-neutral-800 pl-3 space-y-1 bg-black/40 py-1.5 pr-2">
             <span className="text-neutral-500 uppercase text-xs block font-medium">SEGURIDAD:</span>
             <span className="font-bold text-neutral-400 text-sm block">
-              {isLive ? "CONSULTAR CAPACIDADES" : "SIMULADA (WPA2)"}
+              CONSULTAR CAPACIDADES
             </span>
           </div>
 
@@ -304,7 +306,7 @@ export function Dashboard({ isLive, onWanStatusChange }) {
         {showAdvancedTelemetry && (
           <div className="mt-4 pt-4 border-t-2 border-neutral-800">
             <CapabilitiesGrid
-              capabilities={capsData.capabilities}
+              capabilities={capabilities}
               isLive={isLive}
             />
           </div>

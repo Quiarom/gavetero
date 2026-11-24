@@ -209,18 +209,14 @@ func zeroBytes(p *[]byte) {
 	*p = (*p)[:0]
 }
 
-type capabilityError struct {
-	State  string `json:"state"`
-	Reason string `json:"reason,omitempty"`
+type observationReader func(context.Context) domain.Observation[any]
+
+type securityCapable interface {
+	SecurityCapability(ctx context.Context, name string) (domain.SecurityState, error)
 }
 
-type capabilityStatus struct {
-	State  string `json:"state"`
-	Status int    `json:"http_status,omitempty"`
-}
-
-type capabilitiesResponse struct {
-	Capabilities map[string]string `json:"capabilities"`
+type wirelessCapable interface {
+	FetchWirelessSecurity(context.Context) (tplinkwr841v8.WirelessSecurity, error)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -229,322 +225,224 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func writeUnsupported(w http.ResponseWriter, reason string) {
-	writeJSON(w, http.StatusNotFound, capabilityError{State: "unsupported_or_unverified", Reason: reason})
-}
-
-func writeUnavailable(w http.ResponseWriter, reason string) {
-	writeJSON(w, http.StatusServiceUnavailable, capabilityError{State: "unavailable", Reason: reason})
-}
-
-// securityCapable is the optional contract for adapters that can
-// serve per-capability security endpoints. The TP-Link WR841N
-// adapter implements it (one HTTP fetch per capability). The
-// fixture adapter does not: in mock mode every per-capability
-// security endpoint returns 404 with state "unsupported_or_unverified".
-type securityCapable interface {
-	SecurityCapability(ctx context.Context, name string) (domain.SecurityState, error)
-}
-
 func registerRoutes(mux *http.ServeMux, adapter domain.RouterAdapter, store *sessionStore) {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, capabilityStatus{State: "ok", Status: 200})
+		writeJSON(w, http.StatusOK, map[string]any{"state": "ok", "http_status": 200})
 	})
-	mux.HandleFunc("/v0/device", handleDevice(adapter))
-	mux.HandleFunc("/v0/status", handleStatus(adapter))
-	mux.HandleFunc("/v0/clients", handleClients(adapter))
-	mux.HandleFunc("/v0/capabilities", handleCapabilities(adapter))
-	mux.HandleFunc("/v0/security/wireless", handleSecurityWireless(adapter))
-	mux.HandleFunc("/v0/security/wps", handleSecurityWPS(adapter))
-	mux.HandleFunc("/v0/security/dmz", handleSecurityDMZ(adapter))
-	mux.HandleFunc("/v0/security/upnp", handleSecurityUPnP(adapter))
-	mux.HandleFunc("/v0/security/remote-management", handleSecurityRemoteManagement(adapter))
-	mux.HandleFunc("/v0/security/forwarding", handleSecurityForwarding(adapter))
+	readers := map[string]observationReader{
+		"device":   deviceReader(adapter),
+		"status":   statusReader(adapter),
+		"clients":  clientsReader(adapter),
+		"wireless": wirelessReader(adapter),
+	}
+	for _, name := range []string{
+		tplinkwr841v8.OpWPS, tplinkwr841v8.OpDMZ, tplinkwr841v8.OpUPnP,
+		tplinkwr841v8.OpRemoteManagement, tplinkwr841v8.OpForwarding,
+	} {
+		readers[name] = securityReader(adapter, name)
+	}
+	for name, read := range readers {
+		prefix := "/v0/security/"
+		switch name {
+		case "device", "status", "clients":
+			prefix = "/v0/"
+		}
+		mux.HandleFunc(prefix+name, observationHandler(read))
+	}
+	mux.HandleFunc("/v0/capabilities", observationHandler(capabilitiesReader(readers)))
 }
 
-// handleCapabilities returns the live capability matrix. Each
-// entry is one of the four documented states (verified, absent,
-// unsupported_or_unverified, unavailable). The matrix is derived
-// from the adapter's per-capability dispatch: each security
-// endpoint is fetched once with a short timeout, and the
-// returned state is mapped to the four-state vocabulary.
-// device is not a security endpoint, so we report it as
-// "verified" only if Identify succeeds, "unavailable" otherwise.
-func handleCapabilities(adapter domain.RouterAdapter) http.HandlerFunc {
+func observationHandler(read observationReader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		caps := capabilitiesResponse{Capabilities: probeCapabilities(r.Context(), adapter)}
-		writeJSON(w, http.StatusOK, caps)
-	}
-}
-
-// probeCapabilities returns the live state of every endpoint the
-// runtime exposes. The runtime has already authenticated once
-// at startup; each probe reuses the session. There are 9 caps
-// in total: device, status, clients are NOT security caps
-// (the adapter has typed methods for them); the remaining 6
-// go through SecurityCapability, which returns the four-state
-// vocabulary. absent = firmware does not implement; verified =
-// runtime parsed the response; unsupported_or_unverified =
-// runtime has no parser; unavailable = transport error.
-// probeCapabilities returns the live state of every endpoint the
-// runtime exposes. The runtime has already authenticated once at
-// startup; each probe reuses the session.
-//
-// There are 9 capabilities in total: device, status, clients are
-// NOT security caps (the adapter has typed methods for them); the
-// remaining 6 (wireless_security, wps, dmz, upnp, remote_management,
-// forwarding) go through SecurityCapability, which already
-// classifies the response into the four-state vocabulary.
-//
-//	verified                    adapter read the value
-//	absent                      firmware does not implement
-//	unsupported_or_unverified   runtime has no parser
-//	unavailable                 transport failure, timeout, refused
-//
-// The probe distinguishes absent from unsupported_or_unverified by
-// inspecting the underlying error: ErrObservationAbsent means the
-// firmware did not return the field; ErrUnverifiedEndpoint means
-// the runtime has no parser; anything else is transport-level
-// failure.
-func probeCapabilities(ctx context.Context, adapter domain.RouterAdapter) map[string]string {
-	sc, _ := adapter.(securityCapable)
-	out := map[string]string{}
-	// Non-security caps have typed methods on the adapter.
-	type nonSecurityProbe struct {
-		name string
-		fn   func(context.Context) error
-	}
-	nonSecurity := []nonSecurityProbe{
-		{"device", func(c context.Context) error { _, e := adapter.Identify(c); return e }},
-		{"status", func(c context.Context) error { _, e := adapter.Status(c); return e }},
-		{"clients", func(c context.Context) error { _, e := adapter.Clients(c); return e }},
-	}
-	for _, ns := range nonSecurity {
-		nctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		err := ns.fn(nctx)
-		cancel()
-		if err == nil {
-			out[ns.name] = "verified"
-		} else {
-			out[ns.name] = "unavailable"
-		}
-	}
-	// Security caps go through SecurityCapability when the adapter
-	// implements it. The fixture adapter does not; in mock mode all 6
-	// security caps are reported as unsupported_or_unverified.
-	securityCaps := []string{
-		tplinkwr841v8.OpWireless,
-		tplinkwr841v8.OpWPS,
-		tplinkwr841v8.OpDMZ,
-		tplinkwr841v8.OpUPnP,
-		tplinkwr841v8.OpRemoteManagement,
-		tplinkwr841v8.OpForwarding,
-	}
-	for _, name := range securityCaps {
-		if sc == nil {
-			out[name] = "unsupported_or_unverified"
-			continue
-		}
-		nctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		_, err := sc.SecurityCapability(nctx, name)
-		cancel()
-		if err == nil {
-			out[name] = "verified"
-			continue
-		}
-		if errors.Is(err, domain.ErrObservationAbsent) {
-			out[name] = "absent"
-			continue
-		}
-		if errors.Is(err, domain.ErrUnverifiedEndpoint) {
-			out[name] = "unsupported_or_unverified"
-			continue
-		}
-		out[name] = "unavailable"
-	}
-	// Expose each security cap under both the Op name (with
-	// hyphens, e.g. "remote-management") and the agent-facing name
-	// (with underscores, e.g. "remote_management"). They are the
-	// same observation; the duplication is for backward compat
-	// with the existing test surface and the agent tool list
-	// (which uses underscored names).
-	type alias struct{ from, to string }
-	aliases := []alias{
-		{tplinkwr841v8.OpWireless, "wireless_security"},
-		{tplinkwr841v8.OpWPS, "wps_state"},
-		{tplinkwr841v8.OpDMZ, "dmz_state"},
-		{tplinkwr841v8.OpUPnP, "upnp_state"},
-		{tplinkwr841v8.OpRemoteManagement, "remote_management"},
-		{tplinkwr841v8.OpForwarding, "forwarding_rules"},
-	}
-	for _, a := range aliases {
-		if v, ok := out[a.from]; ok {
-			out[a.to] = v
-		}
-	}
-	return out
-}
-
-func handleDevice(adapter domain.RouterAdapter) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			w.Header().Set("Allow", http.MethodGet)
+			writeJSON(w, http.StatusMethodNotAllowed, observation(domain.Unavailable, "method not allowed", domain.ProvenanceAbsent, nil))
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
+		result := read(ctx)
+		status := http.StatusOK
+		switch {
+		case result.State == domain.UnsupportedOrUnverified && result.Data == nil:
+			status = http.StatusNotFound
+		case result.State == domain.Unavailable:
+			status = http.StatusServiceUnavailable
+		}
+		writeJSON(w, status, result)
+	}
+}
+
+func observation(state domain.ObservationState, reason string, source domain.Provenance, data any) domain.Observation[any] {
+	return domain.Observation[any]{State: state, Reason: reason, Provenance: source, Data: data}
+}
+
+func observed(reason string, source domain.Provenance, data any) domain.Observation[any] {
+	if data == nil {
+		return observation(domain.Unavailable, "observation has no data", domain.ProvenanceAbsent, nil)
+	}
+	if source != domain.ProvenanceObserved && source != domain.ProvenanceFixture {
+		return observation(domain.Unavailable, "observation has no recorded source", domain.ProvenanceAbsent, nil)
+	}
+	return observation(domain.Verified, reason, source, data)
+}
+
+func observationError(err error, name string) domain.Observation[any] {
+	switch {
+	case errors.Is(err, domain.ErrObservationAbsent):
+		return observation(domain.Absent, name+" was not present in the source", domain.ProvenanceAbsent, nil)
+	case errors.Is(err, domain.ErrUnverifiedEndpoint):
+		return observation(domain.UnsupportedOrUnverified, name+" endpoint has no verified recipe", domain.ProvenanceAbsent, nil)
+	case errors.Is(err, domain.ErrCaptureMissing):
+		return observation(domain.Unavailable, name+" requires an active router session", domain.ProvenanceAbsent, nil)
+	default:
+		return observation(domain.Unavailable, name+" could not be obtained or interpreted", domain.ProvenanceAbsent, nil)
+	}
+}
+
+func deviceReader(adapter domain.RouterAdapter) observationReader {
+	return func(ctx context.Context) domain.Observation[any] {
 		info, err := adapter.Identify(ctx)
 		if err != nil {
-			writeUnavailable(w, "router identify failed: "+err.Error())
-			return
+			return observationError(err, "device identity")
 		}
-		writeJSON(w, http.StatusOK, info)
+		if info.FirmwareVersion.Empty() && info.HardwareVersion.Empty() && !info.Authenticated.Known() {
+			if _, mock := adapter.(*fixture.Adapter); mock {
+				return observation(domain.Absent, "device identity was not present in the fixture", info.Provenance, nil)
+			}
+			return observationError(domain.ErrUnexpectedResponse, "device identity")
+		}
+		return observed("read device identity", info.Provenance, info)
 	}
 }
 
-func handleStatus(adapter domain.RouterAdapter) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
+func statusReader(adapter domain.RouterAdapter) observationReader {
+	return func(ctx context.Context) domain.Observation[any] {
 		status, err := adapter.Status(ctx)
 		if err != nil {
-			if errors.Is(err, domain.ErrCaptureMissing) {
-				writeUnavailable(w, "session expired; restart router-core serve")
-				return
+			return observationError(err, "router status")
+		}
+		if !status.Reachable.Known() && !status.UptimeSecs.Valid && (status.WANStatus == "" || status.WANStatus == domain.WANUnknown) {
+			source := status.Provenance
+			if source == "" {
+				source = domain.ProvenanceAbsent
 			}
-			writeUnavailable(w, "router status failed: "+err.Error())
-			return
+			return observation(domain.Absent, "no router status fields were observed", source, nil)
 		}
-		writeJSON(w, http.StatusOK, status)
+		return observed("read router status", status.Provenance, status)
 	}
 }
 
-func handleClients(adapter domain.RouterAdapter) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
+func clientsReader(adapter domain.RouterAdapter) observationReader {
+	return func(ctx context.Context) domain.Observation[any] {
 		clients, err := adapter.Clients(ctx)
-		if errors.Is(err, domain.ErrObservationAbsent) {
-			writeJSON(w, http.StatusOK, map[string]any{
-				"state":   "absent",
-				"clients": []any{},
-			})
-			return
-		}
 		if err != nil {
-			writeUnavailable(w, "router clients failed: "+err.Error())
-			return
+			return observationError(err, "DHCP lease list")
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"state":   "verified",
-			"clients": clients,
-		})
+		if len(clients) == 0 {
+			if clients == nil {
+				return observation(domain.Absent, "no DHCP lease list was observed", domain.ProvenanceAbsent, nil)
+			}
+			source := domain.ProvenanceObserved
+			if _, mock := adapter.(*fixture.Adapter); mock {
+				source = domain.ProvenanceFixture
+			}
+			return observation(domain.Absent, "no DHCP lease rows were observed", source, []domain.Client{})
+		}
+		return observed("read DHCP lease rows", clients[0].Provenance, clients)
 	}
 }
 
-// securityHandler returns a per-capability security handler that
-// dispatches by name and renders the typed observation. A failure
-// in one capability does not poison another; the runtime is
-// authoritative on whether a capability is verified, absent,
-// unsupported_or_unverified, or unavailable.
-func securityHandler(adapter domain.RouterAdapter, name string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
+func securityReader(adapter domain.RouterAdapter, name string) observationReader {
+	return func(ctx context.Context) domain.Observation[any] {
 		sc, ok := adapter.(securityCapable)
 		if !ok {
-			writeUnsupported(w, name+" endpoint is not supported by this adapter")
-			return
+			return observation(domain.UnsupportedOrUnverified, name+" endpoint is not supported by this adapter", domain.ProvenanceAbsent, nil)
 		}
 		state, err := sc.SecurityCapability(ctx, name)
 		if err != nil {
-			if errors.Is(err, domain.ErrUnverifiedEndpoint) {
-				writeUnsupported(w, name+" endpoint is unverified against captured traffic")
-				return
-			}
-			if errors.Is(err, domain.ErrObservationAbsent) {
-				writeUnsupported(w, name+" endpoint not present on this firmware build")
-				return
-			}
-			writeUnavailable(w, name+" failed: "+err.Error())
-			return
+			return observationError(err, name)
 		}
-		if state.WPSEnabled == domain.True {
-			writeJSON(w, http.StatusOK, map[string]any{
-				"state":  "verified",
-				"result": state,
-			})
-			return
+		var hasData bool
+		switch name {
+		case tplinkwr841v8.OpWPS:
+			hasData = state.WPSEnabled.Known()
+		case tplinkwr841v8.OpDMZ:
+			hasData = state.DMZEnabled.Known() || state.DMZHost != ""
+		case tplinkwr841v8.OpUPnP:
+			hasData = state.UPnPEnabled.Known() || state.ActiveUPnPMappings.Valid
+		case tplinkwr841v8.OpRemoteManagement:
+			hasData = state.RemoteManagementEnabled.Known() || state.RemoteManagementPort.Valid
+		case tplinkwr841v8.OpForwarding:
+			hasData = state.ForwardingRules.Valid
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"state": "unverified"})
+		if !hasData {
+			source := state.Provenance
+			if source == "" {
+				source = domain.ProvenanceAbsent
+			}
+			return observation(domain.Absent, "no "+name+" fields were observed", source, nil)
+		}
+		return observed("read "+name, state.Provenance, state)
 	}
 }
 
-func handleSecurityWireless(adapter domain.RouterAdapter) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-		sc, ok := adapter.(securityCapable)
+func wirelessReader(adapter domain.RouterAdapter) observationReader {
+	const history = "Wi-Fi is not verified for the alpha; only historical evidence exists on firmware 3.15.9"
+	return func(ctx context.Context) domain.Observation[any] {
+		reader, ok := adapter.(wirelessCapable)
 		if !ok {
-			writeUnsupported(w, "wireless endpoint is not supported by this adapter")
-			return
+			return observation(domain.UnsupportedOrUnverified, history+"; this adapter has no Wi-Fi reader", domain.ProvenanceAbsent, nil)
 		}
-		state, err := sc.SecurityCapability(ctx, tplinkwr841v8.OpWireless)
+		wifi, err := reader.FetchWirelessSecurity(ctx)
 		if err != nil {
-			if errors.Is(err, domain.ErrUnverifiedEndpoint) {
-				writeUnsupported(w, "wireless endpoint is unverified against captured traffic")
-				return
-			}
-			if errors.Is(err, domain.ErrObservationAbsent) {
-				writeUnsupported(w, "wireless endpoint not present on this firmware build")
-				return
-			}
-			writeUnavailable(w, "wireless failed: "+err.Error())
-			return
+			return observationError(err, "Wi-Fi")
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"state":  "verified",
-			"result": state,
-		})
+		data := struct {
+			Enabled         bool             `json:"enabled"`
+			SSID            domain.Untrusted `json:"ssid"`
+			SecurityTypeRaw int              `json:"securityTypeRaw"`
+			SecurityType    string           `json:"securityType"`
+			Cipher          string           `json:"cipher"`
+			KeyRenewalSecs  int              `json:"keyRenewalSecs"`
+			HasPreSharedKey bool             `json:"hasPreSharedKey"`
+		}{
+			wifi.Enabled, domain.NewUntrusted(wifi.SSID, "router:wireless-security"), wifi.SecurityTypeRaw,
+			wifi.SecurityType, wifi.Cipher, wifi.KeyRenewalSecs, wifi.HasPreSharedKey,
+		}
+		return observation(domain.UnsupportedOrUnverified, history, domain.ProvenanceObserved, data)
 	}
 }
 
-func handleSecurityWPS(adapter domain.RouterAdapter) http.HandlerFunc {
-	return securityHandler(adapter, tplinkwr841v8.OpWPS)
-}
+func capabilitiesReader(readers map[string]observationReader) observationReader {
+	return func(ctx context.Context) domain.Observation[any] {
+		names := [...]string{"device", "status", "clients", "wireless", "wps", "dmz", "upnp", "remote-management", "forwarding"}
+		var results [len(names)]domain.Observation[any]
+		var probes sync.WaitGroup
+		for i, name := range names {
+			probes.Go(func() {
+				probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				defer cancel()
+				results[i] = readers[name](probeCtx)
+			})
+		}
+		probes.Wait()
 
-func handleSecurityDMZ(adapter domain.RouterAdapter) http.HandlerFunc {
-	return securityHandler(adapter, tplinkwr841v8.OpDMZ)
-}
-
-func handleSecurityUPnP(adapter domain.RouterAdapter) http.HandlerFunc {
-	return securityHandler(adapter, tplinkwr841v8.OpUPnP)
-}
-
-func handleSecurityRemoteManagement(adapter domain.RouterAdapter) http.HandlerFunc {
-	return securityHandler(adapter, tplinkwr841v8.OpRemoteManagement)
-}
-
-func handleSecurityForwarding(adapter domain.RouterAdapter) http.HandlerFunc {
-	return securityHandler(adapter, tplinkwr841v8.OpForwarding)
+		matrix := make(map[string]domain.ObservationState, len(readers))
+		source := domain.ProvenanceAbsent
+		for i, name := range names {
+			result := results[i]
+			matrix[name] = result.State
+			if result.Provenance == domain.ProvenanceFixture || source == domain.ProvenanceAbsent {
+				source = result.Provenance
+			}
+		}
+		for alias, name := range map[string]string{
+			"wireless_security": "wireless", "wps_state": "wps", "dmz_state": "dmz", "upnp_state": "upnp",
+			"remote_management": "remote-management", "forwarding_rules": "forwarding",
+		} {
+			matrix[alias] = matrix[name]
+		}
+		return observation(domain.Verified, "summarized observation states; entries are independent", source, matrix)
+	}
 }

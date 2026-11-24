@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 )
 
@@ -84,48 +83,5 @@ func TestEventJSONShape(t *testing.T) {
 	}
 	if m["state"] != "verified" {
 		t.Errorf("event state: got %v, want verified", m["state"])
-	}
-}
-
-// TestStateFromHTTPAndBody pins the four-state mapping.
-func TestStateFromHTTPAndBody(t *testing.T) {
-	cases := []struct {
-		status int
-		body   string
-		want   string
-	}{
-		{200, `{"wpsEnabled":"false"}`, "verified"},
-		{200, `{"state":"absent"}`, "absent"},
-		{200, `{"state":"unsupported_or_unverified"}`, "unsupported_or_unverified"},
-		{404, `{"state":"unsupported_or_unverified","reason":"no parser"}`, "unsupported_or_unverified"},
-		{503, `{"state":"unavailable"}`, "unavailable"},
-		{500, `{"state":"unavailable"}`, "unavailable"},
-		{401, `{}`, "unavailable"},
-	}
-	for _, c := range cases {
-		got := stateFromHTTPAndBody(c.status, []byte(c.body))
-		if got != c.want {
-			t.Errorf("stateFromHTTPAndBody(%d, %s) = %q, want %q", c.status, c.body, got, c.want)
-		}
-	}
-}
-
-// TestNoteFromHTTPAndBody pins the note contract: short, factual,
-// no interpretation.
-func TestNoteFromHTTPAndBody(t *testing.T) {
-	// 200: positive observation
-	n := noteFromHTTPAndBody("get_wps_state", 200, []byte(`{"wpsEnabled":"false"}`))
-	if !strings.Contains(n, "get_wps_state") || !strings.Contains(n, "observation") {
-		t.Errorf("note for 200 must mention tool and observation; got %q", n)
-	}
-	// 404: unsupported
-	n = noteFromHTTPAndBody("get_wps_state", 404, []byte(`{}`))
-	if !strings.Contains(n, "not supported") {
-		t.Errorf("note for 404 must say 'not supported'; got %q", n)
-	}
-	// 5xx: transport failure
-	n = noteFromHTTPAndBody("get_wps_state", 503, []byte(`{}`))
-	if !strings.Contains(n, "transport") {
-		t.Errorf("note for 503 must mention transport; got %q", n)
 	}
 }

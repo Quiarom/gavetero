@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from "react";
 import {
-  Smartphone,
-  Tv,
-  Laptop,
   Monitor,
   Edit3,
   Check,
@@ -15,25 +12,20 @@ import {
 
 const DEVICES_PER_PAGE = 6;
 
-export function DeviceManager({ clients = [], state: _state = "verified" }) {
+export function DeviceManager({ clients, state }) {
   const [aliases, setAliases] = useState(() => {
     try {
-      const saved = localStorage.getItem("router_core_device_aliases");
+      const saved = globalThis.localStorage?.getItem("router_core_device_aliases");
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
     }
-    return {
-      "00:11:22:33:44:55": "Computadora Portátil",
-      "AA:BB:CC:11:22:33": "Teléfono Personal",
-      "10:20:30:40:50:60": "Smart TV Sala"
-    };
+    return {};
   });
 
   const [editingMac, setEditingMac] = useState(null);
   const [tempAlias, setTempAlias] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
@@ -46,7 +38,7 @@ export function DeviceManager({ clients = [], state: _state = "verified" }) {
 
   const handleStartEdit = (mac, currentAlias) => {
     setEditingMac(mac);
-    setTempAlias(currentAlias);
+    setTempAlias(currentAlias ?? "");
   };
 
   const handleSaveAlias = (mac) => {
@@ -68,57 +60,10 @@ export function DeviceManager({ clients = [], state: _state = "verified" }) {
     setEditingMac(null);
   };
 
-  const getDeviceDetails = (name = "") => {
-    const lower = name.toLowerCase();
-    if (lower.includes("phone") || lower.includes("pixel") || lower.includes("iphone") || lower.includes("samsung")) {
-      return {
-        type: "Teléfono",
-        icon: Smartphone,
-        connType: "Wi-Fi (Señal 95%)",
-        isWifi: true
-      };
-    }
-    if (lower.includes("tv") || lower.includes("smart") || lower.includes("tele") || lower.includes("roku")) {
-      return {
-        type: "Smart TV",
-        icon: Tv,
-        connType: "Cable de red o Wi-Fi",
-        isWifi: false
-      };
-    }
-    if (lower.includes("laptop") || lower.includes("macbook") || lower.includes("notebook") || lower.includes("portatil")) {
-      return {
-        type: "Portátil",
-        icon: Laptop,
-        connType: "Wi-Fi (Señal 90%)",
-        isWifi: true
-      };
-    }
-    return {
-      type: "Dispositivo",
-      icon: Monitor,
-      connType: "Wi-Fi / Red",
-      isWifi: true
-    };
-  };
-
-  const filteredClients = clients.filter((client) => {
-    const alias = (aliases[client.mac] || client.name || "").toLowerCase();
-    const name = (client.name || "").toLowerCase();
-    const ip = (client.ip || "").toLowerCase();
-    const mac = (client.mac || "").toLowerCase();
+  const filteredClients = (clients ?? []).filter((client) => {
     const q = searchQuery.toLowerCase();
-
-    const matchesSearch = alias.includes(q) || name.includes(q) || ip.includes(q) || mac.includes(q);
-    if (!matchesSearch) return false;
-
-    if (activeFilter === "wifi") {
-      return getDeviceDetails(client.name).isWifi;
-    }
-    if (activeFilter === "cable") {
-      return !getDeviceDetails(client.name).isWifi;
-    }
-    return true;
+    return [aliases[client.mac], client.name, client.ip, client.mac]
+      .some((value) => value?.toLowerCase().includes(q));
   });
 
   const totalPages = Math.max(1, Math.ceil(filteredClients.length / DEVICES_PER_PAGE));
@@ -136,41 +81,21 @@ export function DeviceManager({ clients = [], state: _state = "verified" }) {
         <div>
           <div className="flex items-center gap-2.5">
             <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white font-sans">
-              Aparatos en tu Casa
+              Concesiones DHCP
             </h2>
-            <span className="font-mono text-xs font-bold text-primary bg-primary/10 border border-primary/30 px-2 py-0.5">
+            {clients && <span className="font-mono text-xs font-bold text-primary bg-primary/10 border border-primary/30 px-2 py-0.5">
               {clients.length}
-            </span>
+            </span>}
           </div>
         </div>
 
-        {/* Filter segment */}
-        <div className="flex items-center gap-1.5 self-start sm:self-auto font-mono text-xs">
-          {[
-            { id: "all", label: "TODOS" },
-            { id: "wifi", label: "WI-FI" },
-            { id: "cable", label: "CABLE" }
-          ].map((f) => (
-            <button
-              key={f.id}
-              onClick={() => {
-                setActiveFilter(f.id);
-                setCurrentPage(1);
-              }}
-              className={`px-3 py-1.5 border-2 font-bold uppercase transition-colors cursor-pointer ${
-                activeFilter === f.id
-                  ? "bg-primary text-white border-primary"
-                  : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:border-neutral-700"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="relative">
+      {!clients && (
+        <p>{state === "unsupported_or_unverified" ? "Concesiones DHCP por verificar." : "Concesiones DHCP no disponibles."}</p>
+      )}
+      {clients?.length === 0 && <p>La lista DHCP observada está vacía.</p>}
+      {clients?.length > 0 && <div className="relative">
         <Search className="h-4 w-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
         <input
           type="text"
@@ -182,15 +107,14 @@ export function DeviceManager({ clients = [], state: _state = "verified" }) {
           placeholder="BUSCAR POR ALIAS, IP O MAC..."
           className="w-full bg-black border-2 border-neutral-800 pl-10 pr-4 py-2.5 text-xs font-mono text-white placeholder-neutral-500 focus:border-primary focus:outline-none transition-colors"
         />
-      </div>
+      </div>}
 
       {/* Devices Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {visibleClients.map((client) => {
-          const alias = aliases[client.mac] || client.name || "Dispositivo";
+          const alias = aliases[client.mac];
+          const dhcpName = client.name || "No informado";
           const isEditing = editingMac === client.mac;
-          const dev = getDeviceDetails(client.name);
-          const DeviceIcon = dev.icon;
 
           return (
             <div
@@ -201,7 +125,7 @@ export function DeviceManager({ clients = [], state: _state = "verified" }) {
               <div className="flex items-center justify-between pb-2 border-b border-neutral-800/80">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="h-9 w-9 bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-300 shrink-0">
-                    <DeviceIcon className="h-4 w-4" />
+                    <Monitor className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
                     {isEditing ? (
@@ -237,36 +161,29 @@ export function DeviceManager({ clients = [], state: _state = "verified" }) {
                         <span
                           onClick={() => handleStartEdit(client.mac, alias)}
                           className="text-sm font-bold text-white hover:text-primary transition-colors cursor-pointer truncate font-mono"
-                          title="Clic para editar nombre"
+                          title="Clic para editar alias local"
                         >
-                          {alias}
+                          {alias || dhcpName}
                         </span>
                         <button
                           onClick={() => handleStartEdit(client.mac, alias)}
                           className="opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-primary transition-opacity p-0.5 cursor-pointer"
-                          title="Cambiar nombre"
+                          title="Editar alias local"
                         >
                           <Edit3 className="h-3 w-3" />
                         </button>
                       </div>
                     )}
-                    <span className="text-[11px] text-neutral-500 block mt-0.5 font-mono">
-                      {dev.connType}
-                    </span>
+                    {alias && <p className="text-xs text-neutral-400">Alias local · Nombre DHCP: {dhcpName}</p>}
                   </div>
                 </div>
 
-                {/* Active indicator & reset alias */}
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <span
-                    className={`h-2 w-2 rounded-full ${client.active === false ? "bg-neutral-600" : "bg-emerald-500 animate-pulse"}`}
-                    title={client.active === false ? "Desconectado" : "Conectado"}
-                  />
                   {aliases[client.mac] && (
                     <button
                       onClick={() => handleResetAlias(client.mac)}
                       className="text-neutral-500 hover:text-neutral-300 transition-colors p-1 cursor-pointer"
-                      title="Restablecer nombre original"
+                      title="Borrar alias local"
                     >
                       <RotateCcw className="h-3 w-3" />
                     </button>

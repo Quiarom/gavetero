@@ -260,37 +260,25 @@ func ParseWirelessSecurity(html []byte) (WirelessSecurity, error) {
 		}
 	}
 
-	enabled := false
-	if n, ok := Int(tokens, wirelessWlanEnabledIndex); ok {
-		enabled = n != 0
-	}
-	secType := 0
-	if n, ok := Int(tokens, wirelessSecurityTypeIndex); ok {
-		secType = n
+	enabled, hasEnabled := Int(tokens, wirelessWlanEnabledIndex)
+	secType, hasSecType := Int(tokens, wirelessSecurityTypeIndex)
+	renewal, hasRenewal := Int(tokens, wirelessKeyRenewalIndex)
+	psk, hasPSKField := Str(tokens, wirelessPmkIndex)
+	if !hasEnabled || !hasSecType || !hasRenewal || !hasPSKField {
+		return WirelessSecurity{}, domain.ErrUnexpectedResponse
 	}
 	cipher := ""
 	if s, ok := Str(tokens, wirelessCipherTypeIndex); ok {
 		cipher = strings.TrimSpace(s)
 	}
-	renewal := 0
-	if n, ok := Int(tokens, wirelessKeyRenewalIndex); ok {
-		renewal = n
-	}
-	hasPSK := false
-	if s, ok := Str(tokens, wirelessPmkIndex); ok {
-		// After sanitization the PMK is replaced with a
-		// placeholder. Treat any non-empty placeholder as "set".
-		hasPSK = strings.TrimSpace(s) != ""
-	}
-
 	return WirelessSecurity{
-		Enabled:         enabled,
+		Enabled:         enabled != 0,
 		SSID:            ssid,
 		SecurityTypeRaw: secType,
 		SecurityType:    wirelessSecuritySecurityType(secType),
 		Cipher:          cipher,
 		KeyRenewalSecs:  renewal,
-		HasPreSharedKey: hasPSK,
+		HasPreSharedKey: strings.TrimSpace(psk) != "",
 		Raw:             raw,
 	}, nil
 }
