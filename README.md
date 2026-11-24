@@ -142,9 +142,9 @@ gvt inspect
 
 gvt ask "Is my Wi-Fi exposed?" --dry-run
 #   Tools called: 3
-#     1. get_device_info /v0/device -> 200
-#     2. get_router_status /v0/status -> 200
-#     3. get_clients /v0/clients -> 200
+#     1. get_security /v0/security/wireless -> 404
+#     2. get_security /v0/security/wps -> 404
+#     3. get_security /v0/security/remote-management -> 404
 #   Model: MiniMaxAI/MiniMax-M3
 #   Mode:  stub
 ```
