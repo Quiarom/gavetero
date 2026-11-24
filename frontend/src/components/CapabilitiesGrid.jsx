@@ -78,6 +78,11 @@ const getCapabilityMeta = (key) => {
 
 const getStatusBadge = (state) => {
   switch (state) {
+    case "mock":
+      return {
+        text: "MOCK (DATOS DE PRUEBA)",
+        className: "border border-neutral-800 bg-neutral-900 text-neutral-300 font-mono text-[11px] font-bold uppercase"
+      };
     case "verified":
       return {
         text: "VERIFICADO",
@@ -108,6 +113,8 @@ const getStatusBadge = (state) => {
 
 export function capabilityStateText(state, provenance) {
   switch (state) {
+    case "mock":
+      return "Mock: datos de prueba, no son evidencia de un router real.";
     case "verified":
       return provenance === "fixture"
         ? "Datos de fixture; no son evidencia de hardware."
