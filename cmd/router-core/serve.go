@@ -92,7 +92,7 @@ func runServeCommand(args []string) error {
 	addr := fs.String("addr", "127.0.0.1:8484", "loopback HTTP listen address")
 	timeout := fs.Duration("timeout", 5*time.Second, "per-request timeout to the router")
 	mock := fs.Bool("mock", false, "run against a fixture-backed adapter (no network)")
-	mockPath := fs.String("mock-fixture", "", "path to a synthetic fixture (default: fixtures/synthetic/tplink-wr841n-v8)")
+	mockPath := fs.String("mock-fixture", "", "path to a synthetic fixture (default: embedded demo)")
 	passwordStdin := fs.Bool("password-stdin", false, "read the admin password from stdin (refuses if stdin is a TTY)")
 	username := fs.String("username", "admin", "admin username for the router login")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -108,12 +108,12 @@ func runServeCommand(args []string) error {
 	var store *sessionStore
 	if *mock {
 		fixturePath := *mockPath
-		if fixturePath == "" {
-			fixturePath = "fixtures/synthetic/tplink-wr841n-v8"
-		}
 		f := fixture.New(fixturePath)
 		adapter = f
 		store = &sessionStore{password: nil}
+		if fixturePath == "" {
+			fixturePath = "embedded demo"
+		}
 		fmt.Fprintf(os.Stderr, "router-core serve: mock mode, fixture=%s\n", fixturePath)
 	} else {
 		if !isRFC1918OrLoopback(*host) {

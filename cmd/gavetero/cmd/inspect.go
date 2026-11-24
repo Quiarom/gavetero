@@ -2,8 +2,8 @@
 // as a sidecar and queries its HTTP API, formatting the result
 // for human or machine consumption.
 //
-// The default mock mode uses synthetic fixture files from the
-// working directory and does not contact a router.
+// The default mock mode uses embedded synthetic fixture files
+// and does not contact a router.
 // With --live --host X, the sidecar talks to a real router at
 // X (default port 80). The same HTTP API exposes the router's
 // observations to gavetero inspect.
@@ -52,9 +52,8 @@ func newInspectCmd() *cobra.Command {
 		Short: "Show the current router observations",
 		Long: `Run router-core as a sidecar and query its HTTP API.
 
-By default, the sidecar runs in mock mode and reads synthetic
-fixture files from the working directory. The fixture is not
-embedded; missing files yield absent observations.
+By default, the sidecar runs in mock mode and reads embedded
+synthetic fixture files. No checkout or router is required.
 
 With --live --host X, the sidecar talks to a real router at
 address X (default port 80). Use --router-user and

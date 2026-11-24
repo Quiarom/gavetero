@@ -58,7 +58,7 @@ the network, so you can develop without hardware.`,
 	cmd.Flags().BoolVar(&mock, "mock", false,
 		"run against a fixture-backed adapter (no network)")
 	cmd.Flags().StringVar(&mockFixture, "mock-fixture", "",
-		"path to a synthetic fixture (default: fixtures/synthetic/tplink-wr841n-v8)")
+		"path to a synthetic fixture (default: embedded demo)")
 	cmd.Flags().BoolVar(&passwordStdin, "password-stdin", false,
 		"read the admin password from stdin (refuses if stdin is a TTY)")
 	cmd.Flags().StringVar(&username, "username", "admin",

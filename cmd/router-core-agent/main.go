@@ -650,26 +650,14 @@ func runLiveOnce(ctx context.Context, opts options, routerClient *routerCoreClie
 	return agentResult{}, errors.New("el agente superó ocho turnos sin producir una respuesta final")
 }
 
-func stubSequence(question string) []string {
-	query := strings.ToLower(question)
-	switch {
-	case strings.Contains(query, "wi-fi"), strings.Contains(query, "wifi"), strings.Contains(query, "inalámbrica"), strings.Contains(query, "expuest"):
-		return []string{"wireless", "wps", "remote-management"}
-	case strings.Contains(query, "quién"), strings.Contains(query, "quien"), strings.Contains(query, "conectad"), strings.Contains(query, "dispositiv"), strings.Contains(query, "aparato"):
-		return []string{"wireless", "wps", "remote-management", "dmz", "upnp", "forwarding"}
-	default:
-		return []string{"dmz", "forwarding", "upnp"}
-	}
-}
-
-func runStub(ctx context.Context, routerClient *routerCoreClient, opts options, question string, steps []observationStep) (agentResult, error) {
-	sequence := stubSequence(question)
-	for _, name := range sequence {
-		observed, err := routerClient.get(ctx, "/v0/security/"+name)
+func runStub(ctx context.Context, routerClient *routerCoreClient, opts options, _ string, steps []observationStep) (agentResult, error) {
+	for _, tool := range []string{"get_device_info", "get_router_status", "get_clients"} {
+		definition, _ := canonicalByName(tool)
+		observed, err := routerClient.get(ctx, definition.Path)
 		if err != nil {
-			return agentResult{}, fmt.Errorf("consultar seguridad %s: %w", name, err)
+			return agentResult{}, fmt.Errorf("consultar %s: %w", tool, err)
 		}
-		steps = append(steps, stepFromObservation("get_security", observed))
+		steps = append(steps, stepFromObservation(tool, observed))
 	}
 
 	answer := fmt.Sprintf("Modo de demostración: revisé las observaciones disponibles en router-core sin llamar a MiniMax. "+

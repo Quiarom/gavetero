@@ -3,9 +3,11 @@ package fixture
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	"github.com/Quiarom/gavetero/internal/adapters/tplinkwr841v8"
 	"github.com/Quiarom/gavetero/internal/domain"
@@ -28,6 +30,42 @@ func TestSyntheticFixtureAdapter(t *testing.T) {
 	security, err := adapter.Security(context.Background())
 	if err != nil || security.WPSEnabled != domain.True || !security.ForwardingRules.Valid {
 		t.Fatalf("security=%+v err=%v", security, err)
+	}
+}
+
+func TestNew(t *testing.T) {
+	t.Chdir(t.TempDir())
+	adapter := New("")
+	info, err := adapter.Identify(context.Background())
+	if err != nil || info.Provenance != domain.ProvenanceFixture || info.FirmwareVersion.Empty() {
+		t.Fatalf("info=%+v err=%v", info, err)
+	}
+	status, err := adapter.Status(context.Background())
+	if err != nil || status.WANStatus != domain.WANConnected {
+		t.Fatalf("status=%+v err=%v", status, err)
+	}
+	clients, err := adapter.Clients(context.Background())
+	if err != nil || len(clients) != 2 {
+		t.Fatalf("clients=%+v err=%v", clients, err)
+	}
+	security, err := adapter.Security(context.Background())
+	if err != nil || security.WPSEnabled != domain.True {
+		t.Fatalf("security=%+v err=%v", security, err)
+	}
+	missing := New(t.TempDir())
+	info, err = missing.Identify(context.Background())
+	if err != nil || !info.FirmwareVersion.Empty() || info.Provenance != domain.ProvenanceAbsent {
+		t.Fatalf("explicit empty directory fell back to demo: info=%+v err=%v", info, err)
+	}
+}
+
+func TestAdapter_read(t *testing.T) {
+	adapter := &Adapter{files: fstest.MapFS{"status.html": &fstest.MapFile{Mode: fs.ModeDir}}}
+	if _, exists, err := adapter.read("status.html"); err == nil || exists {
+		t.Fatalf("directory read: exists=%v err=%v", exists, err)
+	}
+	if _, exists, err := adapter.read("missing.html"); err != nil || exists {
+		t.Fatalf("missing read: exists=%v err=%v", exists, err)
 	}
 }
 

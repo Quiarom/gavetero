@@ -68,11 +68,10 @@ The four-state vocabulary means:
 - `unsupported_or_unverified` — support for this observation is not verified
 - `unavailable` — the observation could not be obtained or interpreted
 
-The default mode replays synthetic files from
-`fixtures/synthetic/tplink-wr841n-v8` relative to the working directory.
-The sidecars are embedded; the fixture files are not. If the files are
-missing, the corresponding observations are absent with no fixture
-provenance. Fixtures are not hardware evidence. With `--live --host X`,
+The default mode replays the embedded synthetic files from
+`fixtures/synthetic/tplink-wr841n-v8`, with no checkout required.
+Fixtures are not hardware evidence. An explicit `--mock-fixture` path
+on the runtime overrides the embedded set. With `--live --host X`,
 the CLI reads from the router at X.
 
 ## Install
@@ -85,7 +84,7 @@ curl -sSf https://raw.githubusercontent.com/Quiarom/gavetero/main/install.sh | b
 ```
 
 This downloads the prebuilt single binary for your platform
-(linux/darwin × amd64/arm64), installs it to
+(Linux/amd64 only), verifies its SHA-256 checksum, installs it to
 `~/.local/bin/gavetero` with a `gvt` symlink, and prints
 the PATH hint if needed.
 
@@ -135,7 +134,7 @@ gvt ask "¿Qué tan expuesta está mi red Wi-Fi?"
 ## Quick start (no router, first try)
 
 ```sh
-# Run from the checkout to replay the synthetic fixture files.
+# Replay the embedded synthetic fixture files from any directory.
 # No GMI key or router required.
 gvt inspect
 #   Mode:  mock (fixture files, no router connection)
@@ -143,9 +142,9 @@ gvt inspect
 
 gvt ask "Is my Wi-Fi exposed?" --dry-run
 #   Tools called: 3
-#     1. get_security /v0/security/wireless -> 404
-#     2. get_security /v0/security/wps -> 404
-#     3. get_security /v0/security/remote-management -> 404
+#     1. get_device_info /v0/device -> 200
+#     2. get_router_status /v0/status -> 200
+#     3. get_clients /v0/clients -> 200
 #   Model: MiniMaxAI/MiniMax-M3
 #   Mode:  stub
 ```
