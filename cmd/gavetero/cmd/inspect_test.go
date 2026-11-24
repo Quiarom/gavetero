@@ -94,6 +94,14 @@ func TestRenderInspectHuman(t *testing.T) {
 				if !strings.Contains(out.String(), "mock (test data, not a real router)") || strings.Contains(out.String(), ": verified") || !strings.HasSuffix(out.String(), "Read your real router: gvt inspect --live --host <router-ip>\n") {
 					t.Fatalf("misleading demo output: %s", out.String())
 				}
+				for _, line := range strings.Split(out.String(), "\n") {
+					if strings.HasPrefix(line, "  mock") {
+						fields := strings.Fields(line)
+						if strings.Contains(strings.ToLower(strings.Join(fields[1:], " ")), "verif") {
+							t.Fatalf("mock legend description implies verification: %s", line)
+						}
+					}
+				}
 			})
 		}
 	}

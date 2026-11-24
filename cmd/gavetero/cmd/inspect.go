@@ -325,7 +325,7 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 	if !opts.Live {
 		fmt.Fprintln(stdout, "  mock                           test data, not a real router")
 		fmt.Fprintln(stdout, "  mock/absent                    test data did not yield the observation")
-		fmt.Fprintln(stdout, "  mock/unsupported_or_unverified support has not been verified")
+		fmt.Fprintln(stdout, "  mock/unsupported_or_unverified support has not been confirmed")
 		fmt.Fprintln(stdout, "  mock/unavailable               could not obtain or interpret the test data")
 		fmt.Fprintln(stdout)
 		fmt.Fprintln(stdout, "Read your real router: gvt inspect --live --host <router-ip>")
