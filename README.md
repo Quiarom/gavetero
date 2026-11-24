@@ -103,6 +103,7 @@ gvt setup
 
 # 2. Confirm the install is healthy.
 gvt doctor
+#   Installation checks only; no router observations. Default inspect uses synthetic demo data, not a real router.
 #   ✓ CLI installation
 #   ✓ config location
 #   ✓ GMI key                  from OS credential store
@@ -137,8 +138,15 @@ gvt ask "¿Qué tan expuesta está mi red Wi-Fi?"
 # Replay the embedded synthetic fixture files from any directory.
 # No GMI key or router required.
 gvt inspect
-#   Mode:  mock (fixture files, no router connection)
+#   Mode:  mock (synthetic demo data, not a real router)
+#   device: synthetic (read device identity; fixture)
+#   status: synthetic (read router status; fixture)
+#   clients: synthetic (read DHCP lease rows; fixture)
+#   capabilities: synthetic (summarized observation states; entries are independent; fixture)
 #   ...
+
+gvt integrations install hermes
+#   ✓ Installed Gavetero skill to /home/you/.hermes/skills/gavetero/SKILL.md
 
 gvt ask "Is my Wi-Fi exposed?" --dry-run
 #   Tools called: 3
@@ -170,7 +178,8 @@ gvt integrations install <hermes|opencode|omp>
 
 Every observation the runtime produces carries one of four
 states. The agent reasons about the answer based on this
-vocabulary; the user sees the same vocabulary in the output.
+vocabulary. Human-readable mock output labels these states as synthetic
+demo data; JSON keeps the original states and fixture provenance.
 
 | State | Meaning | Example |
 |---|---|---|
@@ -181,6 +190,8 @@ vocabulary; the user sees the same vocabulary in the output.
 
 Mock observations identify replayed data with `provenance: "fixture"`.
 Without files to replay, they use `provenance: "absent"`.
+The default demo fixtures and the installable skill are embedded in the
+binary; neither requires a checkout at runtime.
 
 ## Architecture
 

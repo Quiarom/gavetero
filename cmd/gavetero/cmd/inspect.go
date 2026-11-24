@@ -214,7 +214,7 @@ func inspectSource(opts inspectOptions) string {
 	if opts.Live {
 		return "live router at " + opts.Host
 	}
-	return "mock mode (fixture files)"
+	return "mock mode (synthetic demo data, not a real router)"
 }
 
 func inspectMode(opts inspectOptions) string {
@@ -233,7 +233,7 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 			return fmt.Errorf("decode %s data: %w", name, err)
 		}
 	}
-	modeLabel := "mock (fixture files, no router connection)"
+	modeLabel := "mock (synthetic demo data, not a real router)"
 	if opts.Live {
 		modeLabel = "live (router at " + opts.Host + ")"
 	}
@@ -244,7 +244,7 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 	fmt.Fprintln(stdout)
 	for _, name := range []string{"device", "status", "clients", "capabilities"} {
 		result := observations[name]
-		fmt.Fprintf(stdout, "%s: %s (%s; %s)\n", name, result.State, result.Reason, result.Provenance)
+		fmt.Fprintf(stdout, "%s: %s (%s; %s)\n", name, inspectStateLabel(string(result.State), opts), result.Reason, result.Provenance)
 	}
 	fmt.Fprintln(stdout)
 	if len(device) > 0 {
@@ -282,7 +282,7 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 		seen := map[string]bool{}
 		for _, k := range order {
 			if v, ok := caps[k]; ok {
-				fmt.Fprintf(stdout, "  %-22s %s\n", k, v)
+				fmt.Fprintf(stdout, "  %-22s %s\n", k, inspectStateLabel(v, opts))
 				seen[k] = true
 			}
 		}
@@ -294,7 +294,7 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 		}
 		if len(extras) > 0 {
 			for _, k := range extras {
-				fmt.Fprintf(stdout, "  %-22s %s\n", k, caps[k])
+				fmt.Fprintf(stdout, "  %-22s %s\n", k, inspectStateLabel(caps[k], opts))
 			}
 		}
 		fmt.Fprintln(stdout)
@@ -311,11 +311,28 @@ func renderInspectHuman(stdout io.Writer, observations map[string]domain.Observa
 		fmt.Fprintln(stdout)
 	}
 	fmt.Fprintln(stdout, "Legend:")
+	if !opts.Live {
+		fmt.Fprintln(stdout, "  synthetic                           demo data, not a real router")
+		fmt.Fprintln(stdout, "  synthetic/absent                    demo source did not yield the observation")
+		fmt.Fprintln(stdout, "  synthetic/unsupported_or_unverified support has not been verified")
+		fmt.Fprintln(stdout, "  synthetic/unavailable               could not obtain or interpret the demo observation")
+		return nil
+	}
 	fmt.Fprintln(stdout, "  verified                     adapter read the value")
 	fmt.Fprintln(stdout, "  absent                       source did not yield the observation")
 	fmt.Fprintln(stdout, "  unsupported_or_unverified    support has not been verified")
 	fmt.Fprintln(stdout, "  unavailable                  could not obtain or interpret the observation")
 	return nil
+}
+
+func inspectStateLabel(state string, opts inspectOptions) string {
+	if opts.Live {
+		return state
+	}
+	if state == string(domain.Verified) {
+		return "synthetic"
+	}
+	return "synthetic/" + state
 }
 
 // flattenMapValue returns the inner string of an Untrusted

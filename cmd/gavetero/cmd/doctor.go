@@ -88,6 +88,7 @@ func runDoctor(stdout, stderr io.Writer) error {
 
 	fmt.Fprintln(stdout, "Gavetero doctor")
 	fmt.Fprintln(stdout, "==============")
+	fmt.Fprintln(stdout, "Installation checks only; no router observations. Default inspect uses synthetic demo data, not a real router.")
 	fmt.Fprintln(stdout, "")
 	for _, c := range checks {
 		c.print(stdout)
@@ -218,7 +219,7 @@ func checkAdapter() checkResult {
 	return checkResult{
 		state:  "ok",
 		name:   "adapter",
-		detail: "TP-Link TL-WR841N/ND v8.4 (3.15.9) is the first verified adapter",
+		detail: "TP-Link TL-WR841N/ND v8.4 support (not a check of your router)",
 	}
 }
 
