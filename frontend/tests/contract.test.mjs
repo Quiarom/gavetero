@@ -23,6 +23,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
 import { mockAssistantReply } from "../src/lib/mockAssistant.js";
+import { mockCapabilities, mockObservations } from "../src/data/mockData.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..");
@@ -90,7 +91,7 @@ test("mock assistant uses v0 envelopes and draws no security conclusions from mi
     for (const { http_status, result } of steps) {
       assert.equal(http_status, 404);
       assert.deepEqual(result, {
-        state: "unsupported_or_unverified", reason: result.reason, provenance: "absent", data: null
+        state: "unsupported_or_unverified", mode: "mock", reason: result.reason, provenance: "fixture", data: null
       });
       assert.ok(result.reason && answer.includes(result.reason));
     }
@@ -100,12 +101,12 @@ test("mock assistant uses v0 envelopes and draws no security conclusions from mi
 test("mock assistant reports DHCP leases, not active devices, and uses v0 envelopes for general queries", () => {
   const { answer, steps: [clients] } = mockAssistantReply("¿Quién está conectado?");
   assert.match(answer, /no demuestran qué dispositivos están conectados ahora/);
-  assert.equal(clients.result.state, "verified");
+  assert.equal(clients.result.state, "mock");
   assert.equal(clients.result.provenance, "fixture");
   assert.ok(clients.result.data[0].name.value);
   assert.ok(clients.result.data[0].leaseTime.value);
   for (const { result } of mockAssistantReply("Resumen").steps) {
-    assert.deepEqual(Object.keys(result).sort(), ["data", "provenance", "reason", "state"]);
+    assert.deepEqual(Object.keys(result).sort(), ["data", "mode", "provenance", "reason", "state"]);
     assert.ok(result.data);
   }
 });
@@ -134,6 +135,34 @@ describe("honest dashboard observations", () => {
   });
   const dashboard = (observations, isLive = true) =>
     renderToStaticMarkup(createElement(DashboardView, { observations, isLive }));
+
+  test("default MOCK FIXTURES uses mock envelopes and labels, never verified capabilities", () => {
+    for (const envelope of Object.values(mockObservations)) {
+      assert.equal(envelope.mode, "mock");
+      assert.equal(envelope.provenance, "fixture");
+      assert.notEqual(envelope.state, "verified");
+      assert.doesNotMatch(envelope.reason, /verifi/i);
+    }
+    const html = renderToStaticMarkup(createElement(DashboardView));
+    assert.match(html, /Modo: mock \(datos de prueba, no es un router real\)/);
+    for (const text of ["TL-WR841N/ND", "WAN CONECTADA", "omarchy-laptop", "3 CONCESIONES DHCP"]) {
+      assert.ok(html.includes(text), `missing default mock data: ${text}`);
+    }
+    assert.doesNotMatch(html, /VERIFICADO|role="alert"/i);
+    const grid = renderToStaticMarkup(createElement(CapabilitiesGrid, {
+      capabilities: mockCapabilities.capabilities
+    }));
+    assert.equal(grid.split("MOCK (DATOS DE PRUEBA)").length, 4);
+    assert.doesNotMatch(grid, /VERIFICADO/i);
+    assert.doesNotMatch(capabilityStateText("unsupported_or_unverified", "fixture"), /verifi/i);
+    const live = dashboard({ device: response(200, "verified", "observed", {
+      authenticated: "true", model: "REAL-ROUTER"
+    }) });
+    assert.match(live, /REAL-ROUTER/);
+    assert.doesNotMatch(live, /Modo: mock/);
+    const liveGrid = renderToStaticMarkup(createElement(CapabilitiesGrid, { capabilities: { device: "verified" } }));
+    assert.match(liveGrid, />VERIFICADO</);
+  });
 
   test("the dashboard labels fixture identity and only offers copy for IP literals", () => {
     const identity = (managementAddress, provenance = "observed") =>

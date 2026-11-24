@@ -122,7 +122,9 @@ export function capabilityStateText(state, provenance) {
     case "absent":
       return "Sin observación; no implica que la función esté desactivada.";
     case "unsupported_or_unverified":
-      return "Capacidad no verificada.";
+      return provenance === "fixture"
+        ? "Capacidad sin confirmar en los datos de prueba."
+        : "Capacidad no verificada.";
     default:
       return "Observación no disponible.";
   }

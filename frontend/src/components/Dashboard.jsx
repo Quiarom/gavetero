@@ -124,7 +124,7 @@ export function DashboardView({ isLive = false, observations = {}, fetchError, l
     }))
   } : { ...NO_CLIENTS, state: leases?.state === "unsupported_or_unverified" ? leases.state : "unavailable" };
   const capabilities = isLive ? successfulData(observations.capabilities) ?? {} : mockCapabilities.capabilities;
-  const fixtureSource = isLive && Object.values(observations).some((response) => response.data?.provenance === "fixture");
+  const fixtureSource = !isLive || Object.values(observations).some((response) => response.data?.provenance === "fixture");
   const errors = [];
   if (isLive && !loading) {
     if (fetchError) {

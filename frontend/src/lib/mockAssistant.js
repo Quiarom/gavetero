@@ -7,7 +7,7 @@ function step(tool, path) {
 
 export function mockAssistantReply(question) {
   const query = question.toLowerCase();
-  const intro = "Demostración con fixtures sintéticos; no es evidencia del router actual.";
+  const intro = "Modo: mock (datos de prueba, no es un router real); no es evidencia del router actual.";
   if (/wi-?fi|inalámbric|expuest|segur|wps|dmz|riesgo/.test(query)) {
     const labels = { wireless: "Wi-Fi", wps: "WPS", dmz: "DMZ" };
     const steps = Object.keys(labels).map((name) => step("get_security", `/v0/security/${name}`));
